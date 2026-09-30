@@ -1,0 +1,30 @@
+# KASOTI — copy to `local.properties` and edit. NEVER commit the real file (.gitignore has it).
+#
+# `settings.gradle.kts` reads `sdk.dir` from here to decide whether to include `:ui` and
+# `:app-android` at all. With no `sdk.dir` and no `ANDROID_HOME`/`ANDROID_SDK_ROOT`, the Android
+# modules are *skipped* and `./gradlew :core:jvmTest` / `:eval:run` still work — which is what
+# keeps CI and a desktop-only machine usable (AGENTS.md §1, BUILD.md §2).
+#
+# `sdk.dir` is an absolute path with forward slashes, or a backslash-escaped Windows path.
+#   Linux/macOS:  sdk.dir=/home/you/Android/Sdk
+#   Windows:      sdk.dir=C\:\\Users\\you\\AppData\\Local\\Android\\Sdk
+#
+# Alternative: skip this file entirely and export ANDROID_HOME (or ANDROID_SDK_ROOT) instead.
+# `settings.gradle.kts` accepts either; it prefers `sdk.dir` when both are present.
+
+sdk.dir=/path/to/your/Android/Sdk
+
+# ---------------------------------------------------------------------------
+# Optional. Desktop-only build settings; the Android module ignores them, but the
+# scripts/ helpers read some of them (BUILD.md §1, §5).
+#
+# Tesseract traineddata for the desktop console's MRZ OCR. Not used on Android — the field app
+# uses the bundled ML Kit model — so it is commented out rather than set to an empty value.
+# tess.data=/usr/share/tesseract-ocr/5/tessdata
+#
+# The SHA-256 of the model files, for `scripts/verify_bundle.sh` (invariant I12). Never put a
+# *private* key here; this file is gitignored, but a pin that lives beside the thing it pins is
+# not a pin (DESIGN.md §6) — the shipped pins are compile-time constants in a release build.
+# emb.sha256=
+# det.sha256=
+# svm.sha256=

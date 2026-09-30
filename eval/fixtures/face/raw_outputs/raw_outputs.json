@@ -1,0 +1,170 @@
+{
+  "_what_this_is": "NORMATIVE raw output of the real blazeface_short.tflite detector on committed inputs, plus the decode the DESKTOP binding produces from it. Produced by the working :platform binding (dev.kasoti.platform.ml.tflite.TfliteBlazeFaceDetector + AnchorDecoder) on 2026-09-30; NOT by any Android code, which cannot run here.",
+  "_why_it_exists": "The four Android detector defects could not be caught by the face-free fixture, because a face-free fixture only ever asserts zero detections. These bytes are the detector's actual output, so the Android decode can be run against a known-answer decode on a machine with no Android SDK and no device. That is a decode-parity result and nothing more: it says the two platforms would agree IF the device ran, not that the device does.",
+  "_how_to_use_it": "app-android/src/test/java/dev/kasoti/android/ml/BlazeFaceDesktopParityTest.kt loads each *_regressors.f32 and *_classificators.f32, asserts the file digests below, decodes with dev.kasoti.android.ml.BlazeFaceDecoder, and requires the survivors to match, including every score, box edge and keypoint.",
+
+  "schema_version": 1,
+  "recorded_on": "2026-09-30",
+  "recorded_by": "Android face-detector parity fix (eval/fixtures/face/raw_outputs/)",
+  "float_encoding": "little-endian IEEE-754 float32, row-major, no header, no padding",
+
+  "model": {
+    "file": "eval/models/blazeface_short.tflite",
+    "name": "blazeface_short.tflite",
+    "model_tag": "blazeface_short.tflite@sha256:b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f",
+    "sha256": "b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f",
+    "license": "Apache-2.0",
+    "tflite_runtime_version": "2.6.2 (ai.djl.tflite, the genuine org.tensorflow.lite.* Java API)",
+    "_note": "The same bytes on both platforms. D1's 'one hash to pin' is what makes this file meaningful: if the two platforms could load different weights there would be nothing to compare."
+  },
+
+  "input_contract": {
+    "tensor_name": "input",
+    "dtype": "FLOAT32",
+    "shape": [1, 128, 128, 3],
+    "range": [-1.0, 1.0],
+    "formula": "(v / 255.0) * 2.0 - 1.0, v the 0..255 channel sample",
+    "resize": "bilinear with half-pixel centres, ((dst + 0.5) * src / dst) - 0.5, on interleaved RGB",
+    "_resize_note": "The half-pixel convention is a parity requirement, not a preference: Android's Bitmap.createScaledBitmap(filter = true) is a different sampler, and using it would give the two platforms different input pixels.",
+    "_range_note": "NOT VERIFIED between [-1,1] and [0,1] - a one-unit DC offset per channel that needs a consented crop to separate. Excluded by measurement: 0..255 drives regressors to absmax ~4.2e6 versus ~1.6e2 here."
+  },
+
+  "output_tensors": {
+    "_authority": "subgraphs[0].outputs = [175, 174] in the flatbuffer, so output index 0 is regressors and index 1 is classificators.",
+    "regressors": { "name": "regressors", "dtype": "FLOAT32", "shape": [1, 896, 16], "output_index": 0 },
+    "classificators": { "name": "classificators", "dtype": "FLOAT32", "shape": [1, 896, 1], "output_index": 1 },
+    "has_inner_softmax": false,
+    "_softmax_note": "SOFTMAX (builtin code 25) is absent from the operator-code table: ADD, CONCATENATION, CONV_2D, DEPTHWISE_CONV_2D, DEQUANTIZE, MAX_POOL_2D, PAD, RELU, RESHAPE. classificators is a LOGIT; the caller applies the sigmoid.",
+    "anchor_row_layout": {
+      "_comment": "Offsets into a 16-float row. 4 box + 2 keypoint scores + 10 keypoint coordinates.",
+      "box_x_center": 0,
+      "box_y_center": 1,
+      "box_width": 2,
+      "box_height": 3,
+      "keypoint_scores": 4,
+      "keypoints": 6,
+      "keypoint_count": 5,
+      "_keypoint_note": "FIVE, not the six the model card describes. The card documents the Tasks-library output, which synthesises a sixth point."
+    }
+  },
+
+  "decode_parameters": {
+    "_authority": "mediapipe/modules/face_detection/face_detection_short_range.pbtxt plus calculators/tensor/tensors_to_detections_calculator.cc lines 822-831, 864-867, and the sigmoid at line 445.",
+    "num_boxes": 896,
+    "x_scale": 128.0,
+    "y_scale": 128.0,
+    "w_scale": 128.0,
+    "h_scale": 128.0,
+    "min_score_thresh": 0.5,
+    "nms_iou_threshold": 0.3,
+    "max_detections": 10,
+    "anchor_layers": 4,
+    "anchor_strides": [8, 16, 16, 16],
+    "anchor_offset": 0.5,
+    "interpolated_scale_aspect_ratio": 1.0,
+    "fixed_anchor_size": true,
+    "anchor_structure": "stride-8 group: 16x16 cells x 2 anchors = 512. stride-16 layers 1,2,3 MERGE into one 8x8 group x 6 anchors = 384. 512 + 384 = 896, which equals the declared num_boxes. The merge is the detail that is easy to miss; dropping it yields 768.",
+    "box_units": "normalised [0,1] input-image units; the caller scales to source pixels",
+    "_threshold_note": "min_score_thresh, nms_iou_threshold and max_detections are properties of the detector's output distribution and the model card's own cap, NOT screening thresholds. Those live in ThresholdRegistry and nowhere else (AGENTS.md §2)."
+  },
+
+  "cases": {
+    "noface": {
+      "_what_this_is": "Real model output on the committed face-free fixture. The zero-detection reference: no survivor clears 0.5.",
+      "_why_zero": "A smooth gradient contains no face, so no anchor clears the model's own 0.5 floor. Note the highest SURVIVOR scores 0.207, from a raw logit of -1.3418: read raw, every one of these scores is negative, which is not a confidence and is how the missing sigmoid hid.",
+
+      "input_image": "eval/fixtures/face/no_face_synthetic_256.png",
+      "input_sha256": "2d86b539469beceda9aaf3ac75ba886d0769330bb0906329890cd9801e908857",
+      "regressors": {
+        "file": "raw_outputs/noface_regressors.f32",
+        "sha256": "34dde1f309d5968b22ddf601dae9ce648927b3967d61b8c3bfc26fec05c9fec4",
+        "bytes": 57344,
+        "elements": 14336,
+        "absmax": 134.43982
+      },
+      "classificators": {
+        "file": "raw_outputs/noface_classificators.f32",
+        "sha256": "12d66137915979bb351886694663a5ddb2994d66705d2272a121397b0e540ede",
+        "bytes": 3584,
+        "elements": 896,
+        "min": -63.342033,
+        "max": -1.3417693,
+        "logits_above_zero": 0
+      },
+      "decode": {
+        "decoded_anchors": 896,
+        "survivors_after_nms": 5,
+        "above_min_score": 0,
+        "min_score": 0.5,
+        "detection_count": 0,
+        "_authority": "Computed by :platform's dev.kasoti.platform.ml.tflite.AnchorDecoder on these exact bytes. Both platforms must reproduce every number below.",
+        "survivors": [
+          {"rank": 0, "score": 0.20721924, "box": [-0.12641668, -0.30871043, 1.1962949, 1.0140008], "center": [0.5349391, 0.3526452], "size": [1.3227116, 1.3227112], "keypoints": [[0.5455253, 0.3093101], [0.53532565, 0.38020003], [0.5575834, 0.416121], [0.4281088, 0.36044306], [0.60206467, 0.27903336]]},
+          {"rank": 1, "score": 0.04193495, "box": [-0.62585795, 0.11840773, 0.8418119, 1.5859889], "center": [0.10797697, 0.8521983], "size": [1.4676698, 1.4675812], "keypoints": [[0.13586259, 0.8206146], [0.07701859, 0.91557896], [0.086073995, 0.9548562], [0.011239901, 0.7881128], [0.20942807, 0.77542853]]},
+          {"rank": 2, "score": 0.019127043, "box": [0.12443757, 0.25576878, 1.5594063, 1.6907352], "center": [0.8419219, 0.973252], "size": [1.4349687, 1.4349664], "keypoints": [[0.90853107, 0.9353384], [0.8629591, 0.98804104], [0.8384435, 1.0414807], [0.74007237, 0.9145137], [0.920582, 0.9459068]]},
+          {"rank": 3, "score": 0.007631022, "box": [-0.57698536, -0.58740914, 0.64727294, 0.63684547], "center": [0.035143796, 0.024718149], "size": [1.2242583, 1.2242546], "keypoints": [[0.0577183, -0.018843424], [0.03250882, 0.00857833], [0.026558632, 0.050122254], [-0.0298552, 0.015353598], [0.1036452, 0.011176828]]},
+          {"rank": 4, "score": 0.0018260386, "box": [-0.34452635, -0.9294336, 2.1277027, 1.5433624], "center": [0.89158815, 0.30696443], "size": [2.472229, 2.472796], "keypoints": [[1.0117927, 0.17789704], [0.8775271, 0.34159636], [0.8677127, 0.4763551], [0.5925478, 0.16403945], [1.1567656, 0.19377969]]}
+        ]
+      }
+    },
+    "fires": {
+      "_what_this_is": "Real model output on a committed SYNTHETIC image (a drawn ellipse with two dark blobs and a bar - no person, no biometric data) that makes the detector fire. This is the non-zero case: without it every decode assertion would only ever see zero detections.",
+      "_what_this_is_NOT": "A detection-accuracy claim, and not a face. The blob is not a person, and the box is larger than the frame because the anchor-size parameters are unverified (spike 01 §3). What is pinned here is that two platforms decode the same numbers the same way. The sigmoid is load-bearing: the top anchor's raw logit is 0.919 and its probability is 0.7149, so a raw-logit reading both mislabels the score and moves where a floor bites.",
+
+      "input_image": "eval/fixtures/face/raw_outputs/fires_synthetic_256.png",
+      "input_sha256": "ecc7be06cc69d401525db3cb7c63e00016c83ed5e757444161572051c931d57e",
+      "regressors": {
+        "file": "raw_outputs/fires_regressors.f32",
+        "sha256": "29aa5ea26b084e3057aae8fca2c8f07d036d945d6bc34efa90b4645bbef5535e",
+        "bytes": 57344,
+        "elements": 14336,
+        "absmax": 138.4932
+      },
+      "classificators": {
+        "file": "raw_outputs/fires_classificators.f32",
+        "sha256": "87b168eee0666e8a24a7f70dfcd321125b34e560ad7db0cb055c89d10cf61ff6",
+        "bytes": 3584,
+        "elements": 896,
+        "min": -58.77569,
+        "max": 0.91909933,
+        "logits_above_zero": 22
+      },
+      "decode": {
+        "decoded_anchors": 896,
+        "survivors_after_nms": 3,
+        "above_min_score": 1,
+        "min_score": 0.5,
+        "detection_count": 1,
+        "_authority": "Computed by :platform's dev.kasoti.platform.ml.tflite.AnchorDecoder on these exact bytes. Both platforms must reproduce every number below.",
+        "survivors": [
+          {"rank": 0, "score": 0.71485853, "box": [-0.41194636, -0.37305295, 1.43625, 1.4749421], "center": [0.51215184, 0.55094457], "size": [1.8481964, 1.847995], "keypoints": [[0.6572693, 0.4046666], [0.5138949, 0.54275733], [0.5027931, 0.6865302], [0.23537603, 0.46116233], [0.7883225, 0.4862888]]},
+          {"rank": 1, "score": 0.007019622, "box": [0.3452899, -0.59252125, 1.5897827, 0.65196687], "center": [0.96753633, 0.029722799], "size": [1.2444929, 1.2444881], "keypoints": [[1.0125757, 0.0012614205], [0.98082054, 0.03820546], [0.9665769, 0.075041264], [0.8914645, -0.004847005], [1.0478963, 0.0048613213]]},
+          {"rank": 2, "score": 0.005719211, "box": [-0.5928689, -0.60255426, 0.66705215, 0.6573635], "center": [0.03709159, 0.027404616], "size": [1.2599211, 1.2599177], "keypoints": [[0.042361066, -0.009770978], [0.002830442, 0.03134717], [0.0027257204, 0.06937479], [-0.02331353, 0.017579045], [0.10854021, -2.001226E-4]]}
+        ]
+      }
+    }
+  },
+
+  "assertions_this_file_can_support_today": [
+    "Both platforms decode these bytes to the same boxes, scores and keypoints - the decode half of DESIGN.md §3, on a machine with no Android SDK.",
+    "The sigmoid is applied: 'fires' has a raw top logit of 0.919 and a top score of 0.7149, and a reader that skipped the sigmoid would produce neither.",
+    "The anchor grid is 896 centres in the right emission order, and the 16-float row offsets are the model's own.",
+    "The face-free input really does produce zero detections, and the near-miss scores are visible rather than hypothetical."
+  ],
+
+  "assertions_it_cannot_support_today": [
+    "That an Android device produces these numbers. The Android TFLite binding has never been compiled. This file is the known-answer side of that comparison, not the result of it.",
+    "That the boxes are correct box geometry. The anchor-size parameters (min_scale 0.1484375, max_scale 0.75, fixed_anchor_size) come from MediaPipe's Tasks-library fallback block and have never been compared against a real face; D-FACE is empty. The 'fires' box is larger than the frame, which is what garbage regressors look like.",
+    "The [-1,1] versus [0,1] input encoding. A synthetic blob fires under either, so these bytes do not separate them; a consented crop does.",
+    "Any per-bucket bias figure. These are two images."
+  ],
+
+  "provenance": {
+    "produced_by": "dev.kasoti.platform.ml.tflite.TfliteBlazeFaceDetector + AnchorDecoder, via a throwaway JVM probe against eval/models/blazeface_short.tflite and the real ai.djl.tflite runtime 2.6.2",
+    "host": "Linux x86_64, Temurin JDK 17",
+    "not_produced_by": "app-android. No Android code ran. Nothing in the Android module was compiled to make this file.",
+    "reproduce": "The recipe is in raw_outputs/README.md, including the exact synthetic image, and the raw tensors can be regenerated with ./gradlew :platform:jvmTest.",
+    "raw_tensors_are_model_output": true,
+    "_note": "The tensors are the model's real output. The expected decode was computed by the DESKTOP binding. The synthetic input image contains no person and no biometric data - see the consent note in raw_outputs/README.md."
+  }
+}

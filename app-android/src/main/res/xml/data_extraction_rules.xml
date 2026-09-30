@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  KASOTI — backup and device-transfer policy (NFR-P2, THREAT_MODEL.md §4).
+
+  A diary is a biometric log: it holds quantised face embeddings and salted identity hashes for
+  every crossing. Backing it up to a cloud account turns a stolen handset into a stolen
+  biometric database, and a device-to-device transfer would move it to a handset that has not
+  been through provisioning — including its per-deployment HMAC secret and embedding generation.
+
+  So: nothing is backed up and nothing is transferred. The `wipe` capability in
+  `data-extraction-rules` is declared because it is the honest description of a device that can
+  be erased cleanly (FR-S4, one-tap wipe), not because this build implements a full MDM flow.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </device-transfer>
+    <cloud-backup disableIfNoEncryptionCapabilities="true">
+        <exclude domain="root" />
+    </cloud-backup>
+</data-extraction-rules>

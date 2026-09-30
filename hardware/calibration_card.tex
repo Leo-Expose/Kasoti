@@ -1,0 +1,339 @@
+%% =====================================================================
+%% KASOTI — calibration card (printable)  ·  hardware/calibration_card.tex
+%% ---------------------------------------------------------------------
+%% Required contents, DATA.md §5:
+%%   · 4 gray patches  : white / 18% / black  + a skin-tone patch
+%%   · a 5 mm grid and a 1 mm scale
+%%   · resolution wedges
+%%   · a mini rosette-vs-droplet explainer
+%%   · a big  SPECIMEN — KASOTI TEST  watermark
+%%
+%% Purpose (DATA.md §5, EVAL.md §7):
+%%   A 30-second, app-guided routine that produces device_calib.json
+%%   { white-balance gains, px-per-mm, focus-ok }. Every macro and face
+%%   number is invalid without a calibration <= 7 days old.
+%%
+%% Print:  A4, 100% scale (NO "fit to page" — the grid IS the ruler).
+%%         Print TWO, laminate BOTH. Bring both to the finals.
+%% Consume: white/grays first (they soil), keep the wedges clean.
+%%
+%% Build:  pdflatex calibration_card.tex   (from hardware/)
+%%         run it twice; only the .tex and the .pdf belong in the repo.
+%% =====================================================================
+
+\documentclass[10pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{geometry}
+\usepackage{eso-pic}
+\usepackage{array}
+
+\geometry{a4paper, margin=11mm, top=10mm, bottom=10mm}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0pt}
+\setlength{\unitlength}{1mm}
+\setlength{\emergencystretch}{2em}
+
+% --- palette ---------------------------------------------------------------
+\definecolor{ink}{gray}{0.10}
+\definecolor{paper18}{gray}{0.82}   % 18% reflectance, office-laser approximation
+\definecolor{patchWhite}{gray}{1.00}
+\definecolor{patchBlack}{gray}{0.00}
+\definecolor{skinA}{rgb}{0.93,0.79,0.70}   % light
+\definecolor{skinB}{rgb}{0.78,0.60,0.49}   % medium
+\definecolor{skinC}{rgb}{0.55,0.38,0.29}   % deep
+\definecolor{accent}{rgb}{0.10,0.35,0.55}
+\definecolor{hairline}{gray}{0.60}
+
+% --- the watermark ---------------------------------------------------------
+%% Behind everything, rotated, low-contrast so it never contaminates a patch.
+%% hardware/README.md §3 + DATA.md §2: SPECIMEN cards must never be mistakable
+%% for a real document — including the calibration card.
+\AddToShipoutPictureBG{%
+  \AtPageCenter{%
+    \makebox[0pt]{%
+      \rotatebox[origin=c]{32}{%
+        \textcolor{gray!18}{\fontsize{76}{76}\selectfont\bfseries
+          SPECIMEN --- KASOTI TEST}}}}%
+}
+
+\newcommand{\cardtitle}[1]{%
+  \vspace{2.5mm}{\color{accent}\bfseries\large #1}\par\vspace{0.5mm}%
+  {\color{hairline}\hrule height 0.4pt}\par\vspace{1.5mm}%
+}
+\newcommand{\hint}[1]{{\color{ink}\itshape\footnotesize #1}\par\vspace{2.5mm}}
+
+\begin{document}
+\color{ink}
+
+% ===================== header ==========================================
+{\color{accent}\bfseries\Large KASOTI calibration card}\hfill
+{\footnotesize calib-id \rule{26mm}{0.4pt}}\par\vspace{0.5mm}
+{\footnotesize\texttt{hardware/calibration\_card.pdf} · rev A ·
+ print A4 at 100\% · laminate · SPECIMEN --- KASOTI TEST}\par
+
+\vspace{1.5mm}
+{\footnotesize
+The app walks this card in about 30 seconds and writes
+\texttt{device\_calib.json} = \{white-balance gains, px-per-mm, focus-ok\}.
+\textbf{Macro and face numbers do not count without a calibration under 7 days
+old} (EVAL.md \S7). If a patch reads grey instead of the value printed under it,
+the white balance is wrong --- re-run A before anything else.}
+
+% ===================== A. gray patches ==================================
+\cardtitle{A \quad Gray patches \textemdash\ white balance and exposure}
+
+\begin{picture}(186, 34)
+  \put(0,8){\color{patchWhite}\rule{22mm}{22mm}}
+  \put(0,8){\color{ink}\framebox(22,22){}}
+  \put(30,8){\color{paper18}\rule{22mm}{22mm}}
+  \put(30,8){\color{ink}\framebox(22,22){}}
+  \put(60,8){\color{patchBlack}\rule{22mm}{22mm}}
+  \put(60,8){\color{ink}\framebox(22,22){}}
+  \put(90,8){\color{skinA}\rule{22mm}{22mm}}
+  \put(90,8){\color{ink}\framebox(22,22){}}
+  \put(120,8){\color{skinB}\rule{7mm}{22mm}}
+  \put(127,8){\color{skinC}\rule{7mm}{22mm}}
+  \put(120,8){\color{ink}\framebox(14,22){}}
+
+  \put(0,4){\makebox(22,0)[b]{\scriptsize white \ (target 1.00)}}
+  \put(30,4){\makebox(22,0)[b]{\scriptsize 18\% gray \ (0.82)}}
+  \put(60,4){\makebox(22,0)[b]{\scriptsize black \ (0.00)}}
+  \put(90,4){\makebox(22,0)[b]{\scriptsize skin, light}}
+  \put(120,4){\makebox(14,0)[b]{\scriptsize med / deep}}
+  \put(138,26){\makebox(46,0)[tl]{\scriptsize 22\,mm squares}}
+  \put(138,22){\makebox(46,0)[tl]{\scriptsize (2\,mm patch + margin)}}
+  \put(138,18){\makebox(46,0)[tl]{\scriptsize is the working FOV}}
+\end{picture}
+
+\hint{A1 seat the clip on the white patch and capture. A2 capture the 18\,\%
+gray. A3 capture the skin patch --- this is the one that catches the
+orange-peel shift a cheap clip adds, and it is what the macro classifier is
+normalised against. A4 confirm the black patch is not crushed to 0 at both
+capture extremes; if it is, the driver is saturating, which is a hardware
+fault and not a threshold to tune.}
+
+% ===================== B. 5 mm grid =====================================
+\cardtitle{B \quad The 5\,mm grid \textemdash\ is the cell square?}
+
+\begin{picture}(186, 42)
+  \color{ink}
+  \multiput(0,6)(5,0){13}{\line(0,1){30}}
+  \multiput(0,6)(0,5){7}{\line(1,0){60}}
+  \put(0,6){\line(0,1){30}}
+  \put(0,6){\line(1,0){60}}
+  \multiput(0,6)(10,0){7}{\line(0,1){30}}
+  \multiput(0,6)(0,10){4}{\line(1,0){60}}
+
+  \put(64,32){\makebox(120,0)[tl]{\footnotesize 60\,mm $\times$ 30\,mm,
+    5\,mm grid, 10\,mm lines heavy}}
+  \put(64,27){\makebox(120,0)[tl]{\footnotesize Count cells across a 2\,mm
+    macro patch. Fewer than 0.4 cells means the patch is}}
+  \put(64,23){\makebox(120,0)[tl]{\footnotesize below the noise floor and the
+    capture is GREY --- not RED, never RED (FUSION.md).}}
+  \put(64,17){\makebox(120,0)[tl]{\footnotesize Un-square cells here mean a bad
+    pixel pitch or a badly seated clip, long before}}
+  \put(64,13){\makebox(120,0)[tl]{\footnotesize the classifier notices
+    anything.}}
+\end{picture}
+
+% ===================== C. 1 mm scale ====================================
+\cardtitle{C \quad The 1\,mm scale \textemdash\ pixels per millimetre}
+
+\begin{picture}(186, 30)
+  \color{ink}
+  \multiput(0,20)(2,0){51}{\line(0,1){3}}
+  \multiput(1,20)(2,0){50}{\line(0,1){3}}
+  \put(0,17){\makebox(101,0)[rt]{\scriptsize 1\,mm alternating bars, 100\,mm
+    long --- the px-per-mm ruler}}
+  \put(102,21){\makebox(84,0)[tl]{\footnotesize Count pixels across ten
+    alternating bars. Divide by ten.}}
+  \put(102,17){\makebox(84,0)[tl]{\footnotesize That number is
+    \texttt{pxPerMm} in \texttt{device\_calib.json} and it is what makes a}}
+  \put(102,13){\makebox(84,0)[tl]{\footnotesize 2\,mm patch comparable across
+    devices and clips. Two devices agreeing to}}
+  \put(102,9){\makebox(84,0)[tl]{\footnotesize within 2\,\% is the
+    repeatability check in step 6.}}
+  \put(0,7){\line(1,0){100}}
+  \multiput(0,7)(10,0){11}{\line(0,-1){2}}
+  \multiput(0,7)(50,0){3}{\line(0,-1){3}}
+  \multiput(5,3)(10,0){10}{\makebox(0,0)[t]{\scriptsize 10}}
+  \put(100,3){\makebox(0,0)[t]{\scriptsize 100}}
+  \put(108,3){\makebox(14,0)[t]{\scriptsize mm}}
+  \put(102,4){\makebox(84,0)[lb]{\footnotesize 10\,mm ruler --- for the
+    manifest and for your notes, not for the app}}
+\end{picture}
+
+% ===================== D. resolution wedges =============================
+\cardtitle{D \quad Resolution wedges \textemdash\ how sharp is sharp enough}
+
+\begin{picture}(186, 58)
+  \color{ink}
+  \multiput(0,48)(1,0){60}{\line(0,1){6}}
+  \multiput(0,48)(0,1){7}{\line(1,0){60}}
+  \multiput(0,38)(0.5,0){121}{\line(0,1){6}}
+  \multiput(0,38)(0,1){7}{\line(1,0){60}}
+  \multiput(0,28)(0.25,0){241}{\line(0,1){6}}
+  \multiput(0,28)(0,1){7}{\line(1,0){60}}
+  \multiput(0,18)(0.125,0){481}{\line(0,1){6}}
+  \multiput(0,18)(0,1){7}{\line(1,0){60}}
+
+  \put(64,50){\makebox(120,0)[tl]{\footnotesize 1.0\,mm pitch \quad
+    (6\,px at 6\,px/mm) \quad--- offset halftone typically lands here}}
+  \put(64,40){\makebox(120,0)[tl]{\footnotesize 0.5\,mm pitch \quad (3\,px)
+    \quad--- inkjet halftone typically lands here}}
+  \put(64,30){\makebox(120,0)[tl]{\footnotesize 0.25\,mm pitch \quad
+    (1.5\,px) \quad--- starts to close up}}
+  \put(64,20){\makebox(120,0)[tl]{\footnotesize 0.125\,mm pitch \quad
+    (0.75\,px) \quad--- below sensor Nyquist: expect mush, and that is
+    correct}}
+  \put(64,10){\makebox(120,0)[tl]{\footnotesize Report the \emph{coarsest}
+    group whose bars still separate. Six millimetre bar height.}}
+  \put(64,6){\makebox(120,0)[tl]{\footnotesize That report is the sharpness
+    bar the app shows during capture (SPEC FR-C3).}}
+
+  % bar-height wedge: same pitch, shrinking bar height -> where DOF runs out
+  \multiput(0,0)(0.5,0){8}{\line(1,0){0.4}}
+  \put(0,0){\line(0,1){8}}
+  \put(5,0){\makebox(57,0)[lb]{\scriptsize bar-height wedge, 0.5\,mm pitch,
+    1\,$\mu$m steps: the height at which bars blur is your depth of field}}
+\end{picture}
+
+\hint{D is a hardware check, not a knob. If the top group already blurs at the
+seated distance, the clip is not seated or the card is curved --- fix the
+mechanical problem. Never lower the sharpness gate to make a capture pass
+(AGENTS.md \S5: weakening a gate to make a test pass is a review fail).}
+
+% ===================== E. rosette vs droplet ============================
+\cardtitle{E \quad Rosette vs droplet \textemdash\ what R-PROC actually reads}
+
+\begin{picture}(186, 66)
+  \color{ink}
+
+  % ---- left: rosette (offset / litho screen) --------------------------
+  \put(0,62){\makebox(80,0)[lb]{\scriptsize\textbf{rosette --- offset /
+    litho / laser}}}
+  \multiput(2,48)(1.8,0){19}{\line(0,1){12}}
+  \multiput(2,48)(0,1.8){7}{\line(1,0){34}}
+  \put(40,56){\makebox(50,0)[tl]{\footnotesize Regular lattice at a}}
+  \put(40,52){\makebox(50,0)[tl]{\footnotesize fixed screen angle (15$^\circ$,}}
+  \put(40,48){\makebox(50,0)[tl]{\footnotesize 45$^\circ$, 75$^\circ$); the}}
+  \put(40,44){\makebox(50,0)[tl]{\footnotesize macro FFT finds a radial}}
+  \put(40,40){\makebox(50,0)[tl]{\footnotesize peak at it.}}
+  \put(40,36){\makebox(50,0)[tl]{\footnotesize\scriptsize schematic, not to
+    scale}}
+
+  % ---- right: droplets (inkjet) --------------------------------------
+  \put(86,62){\makebox(80,0)[lb]{\scriptsize\textbf{droplets --- inkjet}}}
+  \put(86,57){\circle*{1.2}}
+  \put(88.4,56.0){\circle*{1.0}}
+  \put(90.8,57.1){\circle*{1.3}}
+  \put(93.2,55.3){\circle*{0.9}}
+  \put(95.6,56.6){\circle*{1.1}}
+  \put(98.0,55.0){\circle*{1.0}}
+  \put(100.4,57.2){\circle*{1.3}}
+  \put(102.8,55.9){\circle*{1.0}}
+  \put(105.2,56.9){\circle*{1.1}}
+  \put(107.6,55.5){\circle*{0.9}}
+  \put(110.0,56.3){\circle*{1.1}}
+  \put(112.4,57.1){\circle*{1.0}}
+  \put(114.8,55.7){\circle*{1.1}}
+  \put(117.2,56.6){\circle*{1.0}}
+  \put(119.6,55.2){\circle*{1.3}}
+  \put(88.0,52.4){\circle*{1.1}}
+  \put(92.0,53.1){\circle*{0.9}}
+  \put(96.0,52.2){\circle*{1.2}}
+  \put(100.0,53.4){\circle*{1.0}}
+  \put(104.0,52.3){\circle*{1.1}}
+  \put(108.0,53.2){\circle*{0.9}}
+  \put(112.0,52.4){\circle*{1.2}}
+  \put(116.0,53.3){\circle*{1.0}}
+  \put(90.0,50.6){\circle*{0.9}}
+  \put(98.0,50.9){\circle*{1.1}}
+  \put(106.0,50.7){\circle*{1.0}}
+  \put(114.0,51.0){\circle*{1.1}}
+  \put(122,56){\makebox(62,0)[tl]{\footnotesize Irregular size and}}
+  \put(122,52){\makebox(62,0)[tl]{\footnotesize placement; ink spreads into}}
+  \put(122,48){\makebox(62,0)[tl]{\footnotesize the fibre and the lattice}}
+  \put(122,44){\makebox(62,0)[tl]{\footnotesize edge softens. The regular}}
+  \put(122,40){\makebox(62,0)[tl]{\footnotesize peak is gone.}}
+  \put(122,36){\makebox(62,0)[tl]{\footnotesize\scriptsize schematic, not to
+    scale}}
+
+  % ---- what the model reads -------------------------------------------
+  \put(0,30){\makebox(186,0)[lb]{\footnotesize\textbf{What the model sees:}}}
+  \put(0,25){\makebox(186,0)[lb]{\footnotesize a radial FFT peak (screen-angle
+    regularity) plus an LBP texture histogram. Both are cheap, and both are}}
+  \put(0,21){\makebox(186,0)[lb]{\footnotesize sensitive to optics --- which is
+    exactly why the clip exists and why this card must be calibrated}}
+  \put(0,17){\makebox(186,0)[lb]{\footnotesize before any threshold is chosen
+    (BUILD.md \S7: never eyeball-tune).}}
+  \put(0,11){\makebox(186,0)[lb]{\footnotesize\textbf{This card does not prove
+    any of it.}}}
+  \put(0,7){\makebox(186,0)[lb]{\footnotesize It gives the operator a visual
+    reference and gives the model one patch whose substrate is known. Any}}
+  \put(0,3){\makebox(186,0)[lb]{\footnotesize accuracy or robustness number
+    comes from the eval harness with a run id --- never from this page
+    (AGENTS.md \S5).}}
+\end{picture}
+
+{\footnotesize
+Dye-sub PVC differs again: often little surface relief and a different base
+fluorescence. That is the UV question, and UV is auxiliary (QA\_BANK) --- it
+never carries a RED on its own.}
+
+% ===================== F. routine ========================================
+\cardtitle{F \quad The 30-second routine (app-guided)}
+
+\begin{tabular}{@{}p{6mm}p{178mm}@{}}
+\textcolor{accent}{\bfseries 1} &
+Clean the clip window. At this magnification dust is a 0.2\,mm feature and it
+will happily masquerade as microprint. \\[1.1mm]
+\textcolor{accent}{\bfseries 2} &
+Seat the shroud flat on section A and wait for the sharpness bar to go green.
+Section D is the reference for what green means. \\[1.1mm]
+\textcolor{accent}{\bfseries 3} &
+Walk A: white $\rightarrow$ 18\,\% gray $\rightarrow$ skin $\rightarrow$ black.
+The app solves white balance and exposure from the first three. \\[1.1mm]
+\textcolor{accent}{\bfseries 4} &
+Walk B for cell shape, then C for px-per-mm. \\[1.1mm]
+\textcolor{accent}{\bfseries 5} &
+Walk D. Record the coarsest wedge group that separates --- a number, written
+down, with the clip id next to it. \\[1.1mm]
+\textcolor{accent}{\bfseries 6} &
+Re-seat the clip three times and re-capture C each time. If px-per-mm moves by
+more than 2\,\%, the shroud is not repeatable and the clip goes back to the
+bench. \\[1.1mm]
+\textcolor{accent}{\bfseries 7} &
+Store \texttt{device\_calib.json}, stamp the calib id in the box at the top
+right, and write the date. Every macro patch you collect afterwards carries
+that calib id (DATA.md \S3). \\
+\end{tabular}
+
+\vspace{3mm}
+\cardtitle{G \quad What this card is not}
+
+{\footnotesize
+Not a security feature, not a tamper-evident print, not a legal document, and
+not a genuine identity record --- it is a \textbf{measurement target}. It
+carries nobody's personal data. It is watermarked SPECIMEN because a
+calibration card that looks official eventually ends up stuck to somebody's ID
+by mistake, and because that call belongs to a government form, not to us.
+
+\vspace{1.5mm}
+\textbf{Bring two laminated copies to the finals} (DEMO.md \S4). Venue lighting
+is uncontrolled (RISKS R10). If a macro capture greys out on stage, re-run this
+routine against the card before anybody touches a threshold.}
+
+\vspace{2.5mm}
+{\footnotesize
+KASOTI --- SIH prototype for evaluation. Not for operational deployment without
+MHA legal and technical clearance (THREAT\_MODEL.md \S8). Source:
+\texttt{hardware/calibration\_card.tex}, rev A. SPECIMEN --- KASOTI TEST}
+
+\end{document}

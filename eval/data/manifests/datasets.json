@@ -1,0 +1,84 @@
+{
+  "version": "datasets.v1",
+  "_comment": [
+    "Split declarations for every dataset named in EVAL.md §2. The harness reads THIS file,",
+    "not the directory layout, to decide which split a row belongs to: a directory depth is",
+    "exactly the thing a motivated person would quietly change, and a manifest change is a",
+    "reviewed diff.",
+    "",
+    "splitUnit must be source-doc, identity or none. Splitting by patch or frame is leakage",
+    "(EVAL.md §2): two crops of one document share every pixel-level artefact and every",
+    "imperfection in the print process, so a model fitted across such a split has already seen",
+    "the test data. The harness refuses a manifest that declares anything else and marks the",
+    "run INVALID.",
+    "",
+    "reportSplit names the split whose numbers may go in the deck. It is the split the",
+    "operating point is MEASURED on, not the one it is TUNED on — see threshold_provenance.json."
+  ],
+  "datasets": [
+    {
+      "id": "D-MACRO",
+      "splits": ["train", "tune", "report"],
+      "splitUnit": "source-doc",
+      "reportSplit": "report",
+      "gate": "macro offset-vs-inkjet (clip, held-out)",
+      "note": "70/15/15 by SOURCE document. 256px gray patches, 7 process labels, clip/no-clip x 3 lights. Target >=600 (v1) -> >=1500 (M3). No media is committed (DATA.md §1); this entry declares the policy, not the contents."
+    },
+    {
+      "id": "D-PASTE",
+      "splits": ["held-out"],
+      "splitUnit": "source-doc",
+      "reportSplit": null,
+      "gate": "F3/F4 validation",
+      "note": "Photo-swap/tilt clips plus macro of the boundaries. >=60 docs. Held out entirely: it is validation data, never a fitting target."
+    },
+    {
+      "id": "D-MRZ",
+      "splits": ["all-test"],
+      "splitUnit": "none",
+      "reportSplit": null,
+      "gate": "M-gate 100%",
+      "note": "Generated valid + single/double mutants, 10k rows. Generated from a fixed seed by dev.kasoti.mrz.MrzCorpus, so there is nothing to split and nothing to leak: the corpus is a function of its seed, and both the generator and the parser are in :core."
+    },
+    {
+      "id": "D-QR",
+      "splits": ["all-test"],
+      "splitUnit": "none",
+      "reportSplit": null,
+      "gate": "Q-gate 100%",
+      "note": "Signed-valid + mutated + wrong-key, >=300. Generated in-process with a per-JVM TEST keypair; see dev.kasoti.eval.fixtures.QrFixtures."
+    },
+    {
+      "id": "D-FACE",
+      "splits": ["tune", "report"],
+      "splitUnit": "identity",
+      "reportSplit": "report",
+      "gate": "TAR@FAR operating point + FRR",
+      "note": "Consented pairs (genuine + impostor) plus an LFW subset for sanity only. Split by IDENTITY: both images of one volunteer must sit in the same split, or a 'genuine' pair in the report split is really a re-sighting of a training identity. No media is committed (DATA.md §1, §4)."
+    },
+    {
+      "id": "D-SPOOF",
+      "splits": ["held-out"],
+      "splitUnit": "identity",
+      "reportSplit": null,
+      "gate": "liveness APCER/BPCER",
+      "note": "Print-attack and screen-attack clips, >=120. Held out: a liveness model fitted on attacks it has seen reports a number that is not a detection rate."
+    },
+    {
+      "id": "D-SCEN",
+      "splits": ["all-test"],
+      "splitUnit": "none",
+      "reportSplit": null,
+      "gate": "diary rules 100% on script",
+      "note": "40 scripted diary scenarios (alias/travel/facilitator/watchlist). Synthetic by construction: each script states what it plants, so there is no distribution to leak from. Includes benign scripts, because a suite that only plants attacks measures recall and not the false-alarm rate that decides whether a rule is safe to ship."
+    },
+    {
+      "id": "D-USAB",
+      "splits": ["all-test"],
+      "splitUnit": "none",
+      "reportSplit": null,
+      "gate": "GREY rate, quality thresholds",
+      "note": "Novice timed runs plus a GREY drill. Field sessions, not a corpus: the numbers are an operational reading (GREY rate, threshold feel) rather than a model metric."
+    }
+  ]
+}

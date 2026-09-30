@@ -1,0 +1,45 @@
+# KASOTI model-fetch manifest — SAMPLE / TEMPLATE (not a real fetch manifest)
+#
+# PURPOSE: scripts/fetch_models.sh downloads the hash-pinned model corpus
+#   (BUILD.md §3). Model binaries are deliberately not committed (.gitignore
+#   excludes *.tflite and eval/models/); they are fetch artefacts, and each one
+#   is verified against the SHA-256 below before it is installed.
+#
+# ############################################################################
+# #  NO URL AND NO HASH IS INVENTED HERE.                                     #
+# #  No model source has been confirmed, and AGENTS.md §8 forbids inventing   #
+# #  model weights/keys/APIs. Until the weights are actually obtained, their  #
+# #  licence is checked (BUILD.md §6) and their provenance recorded in         #
+# #  THIRD_PARTY.md, every field below stays REPLACE_ME.                      #
+# #                                                                          #
+# #  Running fetch_models.sh against THIS file fails immediately with         #
+# #  "UNPOPULATED manifest entry" and performs NO network access. That is the #
+# #  intended behaviour — a silent fetch from a guessed URL is worse than a  #
+# #  red build.                                                              #
+# ############################################################################
+#
+# FORMAT (one entry per line, whitespace separated):
+#     <64 lowercase hex sha256>  <https url>  <destination path, repo-relative>
+# Lines beginning with '#' and blank lines are ignored. The URL MUST be https;
+# a plaintext-http model URL is a supply-chain hole (THREAT_MODEL AT-12).
+#
+# HOW TO POPULATE, honestly:
+#   1. Obtain blazeface_short.tflite and emb_v1.tflite from a source whose
+#      licence permits redistribution in an offline bundle.
+#   2. Record component / licence / source URL / hash status in THIRD_PARTY.md.
+#   3. sha256sum each file and paste the digest here.
+#   4. ./scripts/fetch_models.sh scripts/models_manifest.sample.tsv
+#   5. ./scripts/verify_bundle.sh     (invariant I12)
+#
+# ---------------------------------------------------------------------------
+# EXPECTED INVENTORY (BUILD.md §4; licence verification pending).
+# These two lines are intentionally UNPOPULATED so that running the script
+# against this sample demonstrates the refusal path. Replace each REPLACE_ME
+# with a real sha256 digest and https URL, one field at a time.
+# ---------------------------------------------------------------------------
+REPLACE_ME  REPLACE_ME  eval/models/blazeface_short.tflite
+REPLACE_ME  REPLACE_ME  eval/models/emb_v1.tflite
+#
+# NOTE: eval/models/ is .gitignore'd, so a manifest path here is a build-time
+# fetch target, not a committed artefact. The runtime app loads the same files
+# from bundled assets ONLY — nothing is ever downloaded at runtime.

@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  KASOTI — Android string resources (English).
+
+  SCOPE, and it is a narrow one on purpose (AGENTS.md §2: "never raw strings to the UI"):
+
+    * Finding text — what a `FindingCode` says about a document — is NOT here. It lives in
+      `dev.kasoti.i18n.Messages` in `:core`, is asserted complete against the whole
+      `FindingCode` enum by `:core`'s own test, and is resolved by `dev.kasoti.ui.VerdictPresenter`.
+      Duplicating it here would create a second, untested copy that could say something
+      different from the audit record. That is the single most important thing about this file.
+
+    * UI chrome — labels, buttons, accessibility descriptions — is here AND in
+      `dev.kasoti.ui.FieldStrings`. The duplication is intentional and one-directional: the
+      composables read `FieldStrings` so the presentation logic is unit-testable on a bare JVM,
+      and these resources exist for the system UI (app name, widget labels, a11y strings that
+      must exist even before Compose starts). If a string exists in both, the values must match;
+      `FieldStringsParityTest` in `:ui` checks the catalogue against its own key list, and a
+      reviewer checks the two files side by side.
+
+  Every string here has a `values-hi` counterpart (FR-R1; SPEC §3 persona P1 is Hindi-first).
+  A missing Hindi string is an English string shown to a Hindi-speaking officer at a counter,
+  which is a worse outcome than a visible placeholder.
+-->
+<resources>
+    <string name="app_name">KASOTI</string>
+
+    <!-- These four are the system-visible names; the rest of the chrome is in FieldStrings. -->
+    <string name="verdict_green">CLEARED</string>
+    <string name="verdict_amber">SECONDARY CHECK</string>
+    <string name="verdict_red">DO NOT CLEAR</string>
+    <!-- "RETAKE", never "INVALID" or "UNVERIFIED": a failed quality gate says nothing about
+         the document, and a headline that sounds like a finding is an accusation (FUSION.md §1). -->
+    <string name="verdict_grey">RETAKE</string>
+
+    <string name="demo_watermark">DEMO</string>
+    <string name="demo_banner">DEMO MODE — not a real screening</string>
+
+    <string name="cd_verdict_headline">Verdict: %1$s</string>
+    <string name="cd_capture_preview">Camera preview of the document</string>
+    <string name="cd_crop_overlay">Document crop overlay with four draggable corner handles</string>
+    <string name="cd_quality_meter">Live capture quality meter</string>
+    <string name="cd_sharpness_meter">Macro patch sharpness meter</string>
+    <string name="cd_evidence_thumbnail">Evidence crop for the finding</string>
+    <string name="cd_layer_status">Layer %1$s, %2$s</string>
+    <string name="cd_shutter">Capture</string>
+    <string name="cd_next_step">Next step</string>
+    <string name="cd_voice_repeat">Read the verdict again</string>
+
+    <!--
+      Operational error text. English-only by design, on all platforms including
+      values-hi/strings.xml where they appear verbatim: these are events for the lead who must
+      re-provision a handset or replace a model file, not instructions an officer reads at a
+      counter. A half-translated security message is worse than a clearly-scoped English one,
+      and a jawan seeing an untranslated message in Hindi is a *harmless* outcome here whereas a
+      lead mis-reading a translated one is not.
+    -->
+    <string name="err_model_hash">Model files failed their hash check. Refusing to screen.</string>
+    <string name="err_model_missing">Model files are missing. Refusing to screen.</string>
+    <string name="err_model_truncated">A model file is truncated. Refusing to screen.</string>
+    <string name="err_camera">The camera could not start.</string>
+    <string name="err_ocr">Text recognition is unavailable on this device.</string>
+    <string name="err_no_network_needed">KASOTI does not use the network. Everything above ran on this device.</string>
+</resources>

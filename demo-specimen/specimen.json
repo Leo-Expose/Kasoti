@@ -1,0 +1,11 @@
+{
+  "mrz": ["AB12345671IND9006083M3106073AB1234567<<<<<16","SHARMA<<RAMESH<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"],
+  "printName": "SHARMA RAMESH",
+  "printDob": "1990-06-08",
+  "issueDate": "2021-06-08",
+  "expiry": "2031-06-07",
+  "photoZone": {"x": 0.14, "y": 0.18, "w": 0.20, "h": 0.32},
+  "textZone":  {"x": 0.05, "y": 0.72, "w": 0.90, "h": 0.12},
+  "presentation": "PHYSICAL",
+  "trust": "VERIFY"
+}

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The launcher glyph: a stylised MRZ band over a crop frame.
+
+  Drawn as a vector rather than shipped as PNGs so it is one file at any density, adds ~0 KB
+  to the size budget, and cannot be blurry on the low-end device SPEC §10 A2 assumes.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,38h48v6H30z M30,48h48v6H30z M30,58h48v6H30z M30,68h30v5H30z" />
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:fillColor="#00000000"
+        android:pathData="M26,32h56v48h-56z" />
+</vector>

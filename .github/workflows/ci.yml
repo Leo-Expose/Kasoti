@@ -1,0 +1,578 @@
+name: CI
+
+# AGENTS.md §1: "CI runs on every push: build + core tests + eval smoke + lint +
+# :core network-import ban + PII-scrubber test + APK/bundle size check."
+# This workflow is that list, in the order that fails fastest and cheapest, plus the
+# SDK-free Android proof that only `app-android/tools/verify-offline.sh` can give.
+#
+# Two things this file is careful about, because getting them wrong is how a CI becomes
+# theatre:
+#
+#   1. No step claims to check something it does not check. A skipped step says SKIPPED,
+#      an advisory step says ADVISORY and prints its finding count, and a step that cannot
+#      run says why. `:app-android` is not in the build without an SDK, and no amount of
+#      green ticks makes it so.
+#   2. No step carries a number that will drift. Counts are read out of the tool that
+#      produced them at run time. A hard-coded "171 findings" in a workflow file is a lie
+#      waiting for the next commit, and nobody re-reads workflow files to check.
+
+on:
+  push:
+    branches: ['**']          # every push, including feature branches (mX/*)
+    tags: ['v*']
+  pull_request:
+  # Weekly offline proof (BUILD.md §1: "CI verifies with --offline weekly").
+  # 03:17 UTC Mondays — off the hour on purpose, so it does not queue behind
+  # every other team's Monday build.
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+    inputs:
+      offline_proof:
+        description: 'Also run the weekly --offline airplane build proof'
+        type: boolean
+        default: false
+
+# Superseded runs on the same branch are wasted CI minutes; cancel them.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GRADLE_OPTS: -Dorg.gradle.daemon=false
+  # BUILD.md §1 — JDK 17 is the toolchain every module compiles against.
+  JAVA_VERSION: '17'
+
+jobs:
+  verify:
+    name: build + core tests + eval smoke + gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Gradle (with build cache + dependency cache)
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      # ---------------------------------------------------------------------
+      # WHAT IS ACTUALLY SDK-GATED, precisely.
+      #
+      # `settings.gradle.kts` ALWAYS includes `:core :platform :eval :app-desktop :ui`.
+      # Only `:app-android` is behind the SDK gate (`include(":app-android")` inside
+      # `if (androidEnabled)`), because it is the one module that applies AGP and needs a
+      # real SDK to configure. `:ui` is plain `kotlin-jvm` with no Compose and no Android
+      # dependency at all, so gating it behind an SDK would mean it is never compiled on
+      # exactly the machines that can most cheaply check it.
+      #
+      # The previous version of this comment claimed `:ui` was SDK-gated and printed
+      # "settings.gradle.kts will not include :ui" when no SDK was found. That was false,
+      # and it mattered: it taught a reader that `:ui:test` never runs, which is why the
+      # `:ui` test step below used to be conditional on an SDK and therefore had never run
+      # in this workflow at all. `:ui:test` is now unconditional, for the same reason
+      # `:core:jvmTest` is.
+      # ---------------------------------------------------------------------
+      - name: Detect Android SDK
+        id: sdk
+        run: |
+          set -euo pipefail
+          SDK=""
+          for candidate in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" \
+                           "${RUNNER_TEMP}/android-sdk"; do
+            if [ -n "$candidate" ] && [ -d "$candidate" ]; then SDK="$candidate"; break; fi
+          done
+          if [ -z "$SDK" ]; then
+            echo "::notice title=Android modules skipped::No Android SDK on this runner."
+            echo "::notice::settings.gradle.kts will NOT include :app-android, so the Android"
+            echo "::notice::build, the APK-size step and the bundle-manifest step are SKIPPED,"
+            echo "::notice::not passed. :ui is NOT affected — it is always in the build."
+            echo "::notice::app-android/tools/verify-offline.sh covers what can be covered"
+            echo "::notice::without an SDK; see the 'SDK-free Android proof' step."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "sdk.dir=$SDK" > local.properties
+            echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+            echo "enabled=true"  >> "$GITHUB_OUTPUT"
+            echo "Android SDK found at $SDK — :app-android is in the build."
+          fi
+
+      - name: Report toolchain
+        run: |
+          java -version 2>&1
+          ./gradlew --version | sed -n '1,12p'
+
+      # -- 1 ----------------------------------------------------------------
+      # Fast logic tests first: BUILD.md's "run before every push" command, and
+      # the cheapest signal that the tree even compiles. Every module with a test
+      # task runs here, unconditionally — the set is not SDK-dependent and must not
+      # become so.
+      - name: ':core:jvmTest — fast logic tests'
+        id: core-tests
+        run: ./gradlew --stacktrace :core:jvmTest
+
+      - name: ':core:allTests — all core targets'
+        id: core-all-tests
+        run: ./gradlew --stacktrace :core:allTests
+
+      - name: ':platform:jvmTest — crypto/imaging/OCR adapters'
+        id: platform-tests
+        run: ./gradlew --stacktrace :platform:jvmTest
+
+      # Unconditional on purpose. `:ui` is a plain kotlin-jvm module with no Android and
+      # no Compose dependency, so it configures, compiles and tests on a runner with no
+      # SDK. Making this step conditional on an SDK would have been the same false
+      # assumption the SDK-detection comment used to encode, expressed as behaviour.
+      - name: ':ui:test — shared presentation state (not SDK-gated)'
+        id: ui-tests
+        run: ./gradlew --stacktrace :ui:test
+
+      - name: ':app-desktop:test — Post-Console domain + CLI'
+        id: desktop-tests
+        run: ./gradlew --stacktrace :app-desktop:test
+
+      - name: ':eval:test — harness unit tests'
+        id: eval-tests
+        run: ./gradlew --stacktrace :eval:test
+
+      # -- 2 ----------------------------------------------------------------
+      # The harness has its own exit-code contract (EVAL.md §3) and CI has to honour it
+      # rather than flattening it:
+      #
+      #   0  PASS        every required suite ran and no gate failed
+      #   2  GATE FAILED a gate reported a real regression          -> BUILD MUST FAIL
+      #   3  INVALID     the report split is mis-tuned, so the run's numbers cannot be
+      #                  compared against the last one                -> BUILD MUST FAIL
+      #   4  INCOMPLETE  a required suite was skipped. The device gates
+      #                  (Android-vs-desktop parity) are ALWAYS skipped without a device,
+      #                  so 4 is the correct and expected result on any runner without
+      #                  hardware attached.                                -> MUST NOT FAIL
+      #
+      # This step used to run `:eval:run smoke` with no continue-on-error, which meant the
+      # `verify` job was red on every single run — an always-red gate is worse than no
+      # gate, because it is indistinguishable from a real failure and trains everyone to
+      # ignore the log. Note what is NOT being claimed: exit 0 must not be the trigger
+      # either. A 0 here would mean a device WAS attached (or that the device gates
+      # stopped being required), which is a different thing to verify and is reported
+      # below rather than asserted.
+      #
+      # TRAP, and the reason this step is longer than a `case` on `$?`: **the harness's exit
+      # code is not observable as `$?` from gradlew.** Gradle runs the harness in a child
+      # JVM, reports the child's code in prose on STDERR
+      #     > Process 'command '…/java'' finished with non-zero exit value 4
+      # and then exits 1 itself for any non-zero child. So a naive
+      #     ./gradlew :eval:run --args=smoke; case $? in … 4) ok ;;
+      # never sees 4 — it sees 1 — and the build goes red on the one code that is documented
+      # as the correct off-device answer. The step therefore captures the log, reads the
+      # child's code out of it, and treats a missing/unparseable code as a failure rather than
+      # guessing. Verified locally against gradle 8.14.3:
+      #     harness exit 4 -> gradlew exit 1 -> "…non-zero exit value 4" on stderr
+      - name: ':eval:run smoke — fixtures harness (~60 s), EVAL.md §3 exit codes'
+        id: eval_smoke
+        run: |
+          set -uo pipefail
+          log=$(mktemp)
+          set +e
+          ./gradlew --stacktrace :eval:run --args="smoke" 2>&1 | tee "$log"
+          gradle_code=${PIPESTATUS[0]}
+          set -e
+          if [ "$gradle_code" -eq 0 ]; then
+            code=0
+          else
+            # The child's code, as reported by Gradle on stderr. LAST match, so a
+            # stack-trace line that happens to mention an earlier value cannot win.
+            code=$(grep -o 'non-zero exit value [0-9]\+' "$log" | tail -n 1 | grep -o '[0-9]\+$' || true)
+            code=${code:-none}
+          fi
+          case "$code" in
+            0) status=PASS;       note="every required suite ran and no gate failed" ;;
+            2) status=GATE_FAILED; note="a gate reported a real regression" ;;
+            3) status=INVALID;    note="report split mis-tuned; run is not comparable to the last one" ;;
+            4) status=INCOMPLETE; note="a required suite was skipped (no device attached) — expected off-device" ;;
+            *) status=UNKNOWN;    note="harness exit code not recognised (gradlew=$gradle_code, harness=$code)" ;;
+          esac
+          echo "::notice title=eval smoke — $status (harness exit $code, gradlew exit $gradle_code)::$note"
+          echo "eval_status=$status" >> "$GITHUB_OUTPUT"
+          echo "eval_exit=$code" >> "$GITHUB_OUTPUT"
+          {
+            echo "### :eval:run smoke -> $status (harness exit $code, gradlew exit $gradle_code)"
+            echo
+            echo "$note"
+            echo
+            echo "Note: gradlew exits 1 whenever the harness exits non-zero, so the harness's own"
+            echo "code is read from Gradle's stderr, not from \$?. Exit 4 is INCOMPLETE — a device"
+            echo "gate was skipped because no device is attached — and does not fail the build."
+            if [ "$code" = "0" ]; then
+              echo
+              echo "Exit 0 on a runner with no device is unexpected: the device gates are"
+              echo "supposed to be skipped, which yields 4. Check that a device gate was not"
+              echo "silently made non-required (EVAL.md §3)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          rm -f "$log"
+          case "$status" in
+            PASS|INCOMPLETE)
+              echo "eval smoke: $status is not a build failure."
+              ;;
+            *)
+              echo "::error::eval smoke $status (exit $code): $note"
+              exit 1
+              ;;
+          esac
+
+      # -- 3 ----------------------------------------------------------------
+      # Hard gate. This is the mechanical form of README principle 1: no verdict
+      # path may need a network. Exit 1 prints the offending file:line.
+      - name: 'GATE: no network clients in :core (AGENTS.md §5)'
+        id: network-ban
+        run: ./scripts/check_no_network_in_core.sh
+
+      # -- 4 ----------------------------------------------------------------
+      # KNOWN-FAILING / ADVISORY, deliberately.
+      # The PII scrubber does not exist in :core yet. The script therefore exits
+      # 1 with an explicit "not implemented yet" message, which is the correct
+      # signal — but making it blocking today would train everyone to ignore a
+      # red CI. continue-on-error keeps the failure VISIBLE in the log while the
+      # scrubber lands. Flip this to blocking in the same PR that adds
+      # core/.../log/PiiScrubber.kt + its adversarial tests.
+      - name: 'GATE (advisory): PII scrubber test — scrubber not implemented yet'
+        continue-on-error: true
+        run: ./scripts/pii_scrubber_test.sh
+
+      # -- 5 ----------------------------------------------------------------
+      # Advisory for a different reason: the check is CORRECT and currently FAILS the
+      # tree. The maintainer has to triage each finding — register the threshold, or
+      # justify the structural number — and then pin a reviewed baseline. Do NOT "fix"
+      # this by widening the allowlist (AGENTS.md §8).
+      #
+      # The count is read out of the script's own output rather than written here. The
+      # previous version of this step hard-coded "~94 lines", which was wrong on two
+      # counts: the real number was larger, and any number written into a workflow file
+      # is stale the moment the next commit lands. There is no number in this file.
+      - name: 'GATE (advisory): no unregistered thresholds in :core (AGENTS.md §2)'
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          set +e
+          output=$(./scripts/check_no_magic_thresholds.sh --max-print 25 2>&1)
+          code=$?
+          set -e
+          echo "$output"
+          count=$(printf '%s\n' "$output" | sed -n 's/^FAIL  \([0-9][0-9]*\) source line(s).*/\1/p' | head -n 1)
+          if [ -z "$count" ]; then
+            echo "::notice title=magic thresholds::No finding count in the script output (exit $code)."
+          else
+            echo "::warning title=magic thresholds::ADVISORY: $count line(s) in :core product code carry unregistered numeric literals (AGENTS.md §2). Not blocking — see the step comment."
+            echo "| magic thresholds (advisory) | $count findings |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$code"
+
+      # -- 6 ----------------------------------------------------------------
+      # ktlint and detekt are WIRED (root build.gradle.kts applies both plugins to
+      # :core/:platform/:app-desktop/:eval/:ui), so `ktlintCheck` and `detekt` are real
+      # Gradle tasks and the detection below finds them. The guard is kept anyway: it is
+      # the difference between "this ran and is red" and "this did not run", and the two
+      # are indistinguishable from the outside if the guard is removed.
+      #
+      # ADVISORY, and the reason is stated rather than hidden: both default rulesets are
+      # red on day one (thousands of ktlint formatting findings across the tree, and ~1.3k
+      # detekt findings of which three quarters are MagicNumber). Turning either into a
+      # blocking gate now would make `verify` permanently red for a reason unrelated to
+      # the change under test, which is how a maintainer learns to ignore a gate. Neither
+      # ruleset has been weakened to get here — no rule is switched off, no baseline is
+      # committed — and the build does not depend on either task (root build.gradle.kts
+      # detaches them from `check` for the same reason).
+      #
+      # The finding counts below are read from the tools' own reports. What this step
+      # promises is narrow and true: the analysis runs, its output is in the log, and the
+      # number in the job summary is the number the tool produced.
+      # AGENTS.md §1 carries the TODO for turning these into blocking gates.
+      - name: 'Lint (advisory): ktlintCheck + detekt — wired, backlogs not yet cleared'
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          missing=0
+          ran=0
+          declare -a rows=()
+          for task in ktlintCheck detekt; do
+            if ./gradlew -q help --task "$task" >/dev/null 2>&1; then
+              ran=$((ran + 1))
+              echo "::group::$task"
+              set +e
+              ./gradlew --stacktrace "$task"
+              set -e
+              echo "::endgroup::"
+            else
+              missing=$((missing + 1))
+              echo "::warning title=Lint::$task is not a Gradle task in this tree — the plugin is not applied."
+            fi
+          done
+
+          # ktlint writes one .txt per source-set check task, and colours each line with ANSI
+          # escapes, so the escapes have to come off before anything can be counted. Each
+          # finding is then one line starting with the absolute path of the file it is in.
+          ktlint_count=0
+          for f in */build/reports/ktlint/*/ktlint*Check.txt; do
+            [ -f "$f" ] || continue
+            n=$(sed 's/\x1b\[[0-9;]*m//g' "$f" | grep -c '^/' || true)
+            ktlint_count=$((ktlint_count + n))
+          done
+          # detekt writes one Checkstyle XML per module; each <error> is one finding.
+          detekt_count=0
+          for f in */build/reports/detekt/detekt.xml; do
+            [ -f "$f" ] || continue
+            n=$(grep -c '<error' "$f" || true)
+            detekt_count=$((detekt_count + n))
+          done
+
+          echo "::notice title=Lint summary::tasks found: $ran/2 · ktlint findings: $ktlint_count · detekt findings: $detekt_count"
+          rows+=("| ktlintCheck (advisory) | $ktlint_count findings |")
+          rows+=("| detekt (advisory) | $detekt_count findings |")
+          {
+            echo "| lint: ktlintCheck (advisory) | $ktlint_count finding(s) |"
+            echo "| lint: detekt (advisory) | $detekt_count finding(s) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::$missing of 2 lint task(s) do not exist. The plugins are declared in the root build script; this is a real gap, not a red backlog."
+            exit 1
+          fi
+          cat <<'EOF'
+          NOTE: lint RAN. It is not green, and no rule was disabled to make it look green.
+            · ktlint: the ktlint_official ruleset disagrees with how this tree is written
+              (`function-signature`, `multiline-expression-wrapping`, `argument-list-wrapping`
+              account for most of it). `./gradlew ktlintFormat` rewrites them all in one
+              pass, which is a whole-tree reformat and needs its own PR.
+            · detekt: ~3/4 of the findings are MagicNumber, i.e. the numbers AGENTS.md §2
+              wants in thresholds.v1.json — a file that does not exist yet. They overlap
+              with scripts/check_no_magic_thresholds.sh but do not agree with it.
+            Both are tracked in AGENTS.md §1. Until they are cleared, treat these counts
+            as a direction of travel, not as a pass.
+          EOF
+          # Advisory: deliberately exit 0. The findings are above, in the log, and in the
+          # job summary. Failing here on a known backlog is what this step is not for.
+          exit 0
+
+      # -- 7 ----------------------------------------------------------------
+      # SDK-FREE ANDROID PROOF — the highest-value Android gate available on a runner
+      # with no SDK, and the only thing in this workflow that looks at the Android
+      # source at all in that case.
+      #
+      # `app-android/tools/verify-offline.sh` compiles the SDK-free half of `:app-android`
+      # and all of `:ui` with the pinned Kotlin 2.1.21 compiler against the real `:core`
+      # classes, and runs their unit tests on a bare JVM.
+      #
+      # WHAT IT PROVES: the pure layer of the field app compiles; its unit tests pass; every
+      # `:core` API it calls exists with the signature it uses; the Android face-detector
+      # decode is bit-identical to the desktop one, which is half of DESIGN.md §3's
+      # comparability law.
+      #
+      # WHAT IT DOES NOT PROVE: anything importing `android.*`, `androidx.*`,
+      # `org.tensorflow.*` or `com.google.mlkit.*`; resources, the manifest, Gradle
+      # configuration, dependency resolution, R8, aapt2, the Compose compiler; or that the
+      # app runs. The script's own header says this too, and that is the point of quoting
+      # it here — a green run from this step is NOT a green Android build.
+      #
+      # It runs only when there is no SDK, because with an SDK the real Gradle build and
+      # the bundle-size gate are the better evidence. Running both would be redundant, not
+      # stronger: the two compile different subsets.
+      - name: 'SDK-free Android proof (verify-offline.sh) — no SDK on this runner'
+        id: sdk_free_android
+        if: steps.sdk.outputs.enabled != 'true'
+        run: |
+          set -uo pipefail
+          set +e
+          ./app-android/tools/verify-offline.sh
+          code=$?
+          set -e
+          if [ "$code" -ne 0 ]; then
+            echo "::error::verify-offline.sh failed with exit $code. This is the ONLY step in this workflow that checks the Android source on an SDK-less runner, so a failure here is a real failure and not a skip."
+            exit 1
+          fi
+          echo "::notice title=SDK-free Android proof::PASSED for the SDK-free layer only. It does not prove aapt2, R8, resource merging, dependency resolution or on-device behaviour."
+          echo "| Android SDK-free proof (verify-offline.sh) | PASS (SDK-free layer only) |" >> "$GITHUB_STEP_SUMMARY"
+
+      # -- 8 ----------------------------------------------------------------
+      # APK / bundle size gate (BUILD.md §3: APK <= 35 MB).
+      # Only meaningful when an SDK exists; otherwise this step is skipped and
+      # the job summary says so. Skipping is NOT passing.
+      - name: 'GATE: Android bundle built + size check (<= 35 MB)'
+        if: steps.sdk.outputs.enabled == 'true'
+        run: |
+          set -euo pipefail
+          ./gradlew --stacktrace :app-android:bundleRelease
+          OUT=""
+          for f in app-android/build/outputs/**/*.aab app-android/build/outputs/**/*.apk; do
+            [ -f "$f" ] && OUT="$f"
+          done
+          if [ -z "$OUT" ]; then
+            echo "::error::bundleRelease produced no .aab/.apk in app-android/build/outputs"
+            exit 1
+          fi
+          MB=$(awk -v b="$(stat -c %s "$OUT")" 'BEGIN{printf "%.2f", b/1048576}')
+          echo "artefact : $OUT"
+          echo "size     : ${MB} MB"
+          printf 'bundle_mb=%s\n' "$MB" >> "$GITHUB_OUTPUT"
+          awk -v m="$MB" 'BEGIN{exit !(m>35)}' && {
+            echo "::error::${MB} MB exceeds the 35 MB budget (BUILD.md §3)."
+            exit 1
+          }
+          echo "OK: ${MB} MB is within the 35 MB budget."
+          echo "### Android bundle: ${MB} MB (budget 35 MB)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 'Bundle manifest integrity (invariant I12 / AT-12)'
+        if: steps.sdk.outputs.enabled == 'true'
+        continue-on-error: true
+        run: ./scripts/verify_bundle.sh
+
+      # -- 9 ----------------------------------------------------------------
+      # Every row is a specific step's own outcome where one exists. The old version
+      # stamped `${{ job.status }}` into every row, which made a table that could not
+      # distinguish a pass from a skip from an advisory failure — the least useful
+      # possible summary of a run.
+      - name: Gate summary
+        if: always()
+        run: |
+          {
+            echo "## CI gate summary"
+            echo
+            echo "| Gate | Result |"
+            echo "|---|---|"
+            echo "| :core:jvmTest | ${{ steps.core-tests.outcome || 'not run' }} |"
+            echo "| :core:allTests | ${{ steps.core-all-tests.outcome || 'not run' }} |"
+            echo "| :platform:jvmTest | ${{ steps.platform-tests.outcome || 'not run' }} |"
+            echo "| :ui:test (not SDK-gated) | ${{ steps.ui-tests.outcome || 'not run' }} |"
+            echo "| :app-desktop:test | ${{ steps.desktop-tests.outcome || 'not run' }} |"
+            echo "| :eval:test | ${{ steps.eval-tests.outcome || 'not run' }} |"
+            echo "| :eval:run smoke | ${{ steps.eval_smoke.outputs.eval_status }} (exit ${{ steps.eval_smoke.outputs.eval_exit }}) |"
+            echo "| network-ban in :core (HARD) | ${{ steps.network-ban.outcome || 'not run' }} |"
+            echo "| PII scrubber | ADVISORY — see log (not implemented in :core) |"
+            echo "| magic thresholds | ADVISORY — count in the log |"
+            echo "| ktlintCheck / detekt | ADVISORY — counts above |"
+            echo "| Android SDK-free proof | ${{ steps.sdk_free_android.outcome || 'not run (SDK present)' }} |"
+            echo "| APK size (35 MB budget) | ${{ steps.sdk.outputs.enabled == 'true' && 'run' || 'SKIPPED — no SDK' }} |"
+            echo
+            echo "**No CI run has ever happened against this tree**: there is no git remote"
+            echo "and no runner (docs/STATUS.md R-J, R-S). Every row above is unproven until"
+            echo "a run exists. Do not quote this workflow as evidence that anything passes."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # The offline proof (BUILD.md §1: "after that, airplane-build must succeed
+  # (CI verifies with --offline weekly)").
+  #
+  # HONEST LIMITATION, restated in the job summary too: this is NOT a cold-cache proof.
+  # The Gradle dependency cache on a fresh GitHub runner is empty, and an empty cache cannot
+  # build --offline by construction. So the job runs TWO phases in one runner: (1) warm the
+  # cache from the network, (2) build with --offline. Phase 2 is the real assertion — that a
+  # warm cache is sufficient. It proves the build needs no network at BUILD time given a
+  # populated cache, which is what an operator on a provisioned laptop has.
+  # A genuine cold-start proof needs a self-hosted runner with a persistent Gradle home; that
+  # is a documented follow-up, not something this job claims.
+  # ---------------------------------------------------------------------------
+  offline-proof:
+    name: weekly offline (--offline) build proof
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.offline_proof == true)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Gradle (cache must persist between the two phases)
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Phase 1 — warm the dependency cache (requires network)
+        run: ./gradlew --stacktrace :core:jvmTest :eval:test :ui:test
+
+      - name: 'Phase 2 — build with --offline (the actual proof)'
+        run: |
+          set -euo pipefail
+          ./gradlew --stop || true
+          echo "### Offline proof: Gradle ran with --offline against a warmed cache." >> "$GITHUB_STEP_SUMMARY"
+          echo "### This is NOT a cold-cache proof; see the job description." >> "$GITHUB_STEP_SUMMARY"
+          ./gradlew --offline --stacktrace :core:jvmTest :core:allTests
+          ./gradlew --offline --stacktrace :ui:test
+          # EVAL.md §3: the harness's 4 = INCOMPLETE because the device gates are skipped
+          # without a device, and that is the correct answer here. 2 and 3 still fail.
+          # Same trap as the `verify` job: gradlew exits 1 for ANY non-zero harness code, so
+          # the harness's own code is read out of Gradle's stderr, not from `$?`.
+          log=$(mktemp)
+          set +e
+          ./gradlew --offline --stacktrace :eval:run --args="smoke" 2>&1 | tee "$log"
+          gradle_code=${PIPESTATUS[0]}
+          set -e
+          if [ "$gradle_code" -eq 0 ]; then
+            code=0
+          else
+            code=$(grep -o 'non-zero exit value [0-9]\+' "$log" | tail -n 1 | grep -o '[0-9]\+$' || true)
+            code=${code:-none}
+          fi
+          rm -f "$log"
+          echo "eval smoke offline: harness exit $code (gradlew exit $gradle_code)."
+          case "$code" in
+            0|4) echo "accepted (0 = pass, 4 = incomplete, no device attached)." ;;
+            2|3) echo "::error::eval smoke offline: harness exit $code (EVAL.md §3: 2 = gate failed, 3 = INVALID)." ; exit 1 ;;
+            *)   echo "::error::eval smoke offline: harness exit code '$code' not recognised (gradlew exit $gradle_code)." ; exit 1 ;;
+          esac
+
+      - name: 'Offline proof — :core has no network client (works offline)'
+        run: ./scripts/check_no_network_in_core.sh
+
+      - name: Offline proof — the Android SDK-free layer still compiles offline
+        run: |
+          set -uo pipefail
+          set +e
+          ./app-android/tools/verify-offline.sh
+          code=$?
+          set -e
+          if [ "$code" -ne 0 ]; then
+            echo "::error::verify-offline.sh failed offline with exit $code."
+            exit 1
+          fi
+          echo "::notice::SDK-free layer only: no aapt2/R8/resources/manifest, and no device."
+
+      - name: Offline proof — bundling with --offline
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          if ./gradlew -q help --task bundleOffline >/dev/null 2>&1; then
+            ./gradlew --offline --stacktrace bundleOffline
+          else
+            echo "::notice::`bundleOffline` is not a Gradle task in this tree yet."
+            echo "::notice::Declared in BUILD.md §3 / AGENTS.md §1; not implemented."
+          fi
+
+      - name: Offline proof — result
+        if: always()
+        run: |
+          {
+            echo "## Offline (--offline) proof — ${{ job.status }}"
+            echo
+            echo "**What this proves:** a build that has already resolved its dependencies"
+            echo "needs no network to compile, test and run the eval harness. That is the"
+            echo "state a provisioned field laptop is in."
+            echo
+            echo "**What this does NOT prove:** that a cold machine with an empty Gradle"
+            echo "cache can build. It cannot, by construction — an empty cache has nothing"
+            echo "to resolve from with --offline. A real cold-start proof needs a"
+            echo "self-hosted runner with a persistent Gradle home (docs/STATUS.md)."
+            echo
+            echo "**And:** like the `verify` job, this has never run against this tree."
+            echo "There is no git remote and no runner (docs/STATUS.md R-J, R-S)."
+          } >> "$GITHUB_STEP_SUMMARY"

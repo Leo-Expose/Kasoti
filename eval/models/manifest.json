@@ -1,0 +1,31 @@
+{
+  "models": [
+    {
+      "path": "svm_print_v1_synthetic.json",
+      "version": "svm_print_v1",
+      "trainingRunId": "train-20260929T200155Z-SYNTHETIC-s20260932",
+      "synthetic": true,
+      "trainedOn": "SYNTHETIC: eval/tools/synth_macros.py@2026101 (48 docs/class, 6 crops/doc) \u2014 NOT D-MACRO",
+      "splitPolicy": "70/15/15 by source document (EVAL.md \u00a72)",
+      "sourceDocCount": 336,
+      "modelCard": "svm_print_v1_synthetic_MODEL_CARD.md",
+      "sha256": "b72e4bf05971082bb8d0359c4e2c4efcab3bb25e3edde4da0c8ae56431bef2f1",
+      "bytes": 13718,
+      "command": "python3 eval/tools/train_svm.py --synthetic-corpus /tmp/opencode/synth-corpus/features.jsonl --allow-synthetic --generator SYNTHETIC: eval/tools/synth_macros.py@2026101 (48 docs/class, 6 crops/doc) \u2014 NOT D-MACRO --out eval/models/svm_print_v1_synthetic.json"
+    },
+    {
+      "path": "model-b.json",
+      "version": "svm_print_v1",
+      "trainingRunId": "train-20260929T200408Z-SYNTHETIC-s20260932",
+      "synthetic": true,
+      "trainedOn": "SYNTHETIC: eval/tools/synth_macros.py@2026101 (48 docs/class, 6 crops/doc) \u2014 NOT D-MACRO",
+      "splitPolicy": "70/15/15 by source document (EVAL.md \u00a72)",
+      "sourceDocCount": 336,
+      "modelCard": "model-b_MODEL_CARD.md",
+      "sha256": "8fc383e48a653c0b0eccd217cd1f93b13e385d0eb855c2015f296013c110fade",
+      "bytes": 13718,
+      "command": "python3 eval/tools/train_svm.py --synthetic-corpus /tmp/opencode/synth-corpus/features.jsonl --allow-synthetic --generator SYNTHETIC: eval/tools/synth_macros.py@2026101 (48 docs/class, 6 crops/doc) \u2014 NOT D-MACRO --out /tmp/opencode/model-b.json"
+    }
+  ],
+  "note": "Hashes are of the committed artefact only. A D-MACRO model is expected to appear here alongside the synthetic one; `:eval`'s macro suite prefers the real one and labels the synthetic fallback loudly. Never delete the synthetic entry to make the directory look clean \u2014 its absence is how a demo starts abstaining to UNKNOWN again."
+}

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  KASOTI — the verdict palette.
+
+  Four roles, and the one that matters most is `retake`.
+
+  `dev.kasoti.ui.VerdictTone` is the *policy*: it decides which palette role a verdict may use,
+  and it is unit-tested. These colours are the *presentation* of that role. The pairing that
+  must not be broken is:
+
+      stop    — filled, high contrast, warm-red. The only filled, saturated block in the app.
+      retake  — NEUTRAL, unfilled, dashed border, a camera glyph. Deliberately the *least*
+                alarming thing on the screen.
+
+  The failure this prevents is the one FUSION.md §1 exists to stop: an operator glancing at a
+  projector from three metres away reading a GREY as a RED, and telling a member of the public
+  their document is fraudulent because the sun was behind them. So `retake_*` uses the same
+  neutral greys as the page background, and `stop_*` is the only role that is ever filled.
+
+  `retake_amber_band` is the *one* warm accent a retake card is allowed: a thin left edge, to
+  draw the eye to the instruction without colouring the whole card. It is an edge, not a fill,
+  and it is never used behind text at size.
+
+  All pairs clear WCAG AA (4.5:1) for body text and 3:1 for large text/UI; `a11y_note.md` in
+  this directory's README records the measured ratios.
+-->
+<resources>
+    <!-- stop: the only accusatory role. -->
+    <color name="stop_fill">#B3261E</color>
+    <color name="stop_on_fill">#FFFFFF</color>
+    <color name="stop_edge">#7F1D1A</color>
+
+    <!-- retake: neutral and unfilled, by policy. -->
+    <color name="retake_surface">#F4F4F2</color>
+    <color name="retake_on_surface">#1C1B1F</color>
+    <color name="retake_edge">#5F6368</color>
+    <color name="retake_amber_band">#8A6A00</color>
+
+    <!-- secondary: a routing decision, not a finding. -->
+    <color name="secondary_fill">#7A5900</color>
+    <color name="secondary_on_fill">#FFFFFF</color>
+    <color name="secondary_surface">#FFF6E0</color>
+    <color name="secondary_edge">#4A3600</color>
+
+    <!-- clear. -->
+    <color name="clear_fill">#1B5E20</color>
+    <color name="clear_on_fill">#FFFFFF</color>
+    <color name="clear_surface">#E8F5E9</color>
+    <color name="clear_edge">#0D3B10</color>
+
+    <!-- page + chrome. -->
+    <color name="page">#FFFFFF</color>
+    <color name="page_on">#1C1B1F</color>
+    <color name="page_muted">#5F6368</color>
+    <color name="scrim">#99000000</color>
+
+    <!-- The DEMO watermark (FR-C5). Fixed and unavoidable: `AppState.watermark` is non-null
+         whenever demo mode is on and the renderer is required to draw it over everything. -->
+    <color name="demo_watermark">#66FF6D00</color>
+</resources>

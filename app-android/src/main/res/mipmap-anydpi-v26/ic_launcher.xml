@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive icon. The 108dp canvas with the safe zone at the centre 72dp is what the platform
+  masks to; the foreground is deliberately oversized inside that zone so a circular mask on a
+  low-end launcher does not clip the MRZ bands.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_kasoti_foreground" />
+    <monochrome android:drawable="@drawable/ic_kasoti_foreground" />
+</adaptive-icon>

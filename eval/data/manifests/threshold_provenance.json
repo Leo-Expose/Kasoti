@@ -1,0 +1,210 @@
+{
+  "version": "provenance.v1",
+  "_comment": [
+    "THE ANTI-GAMING LEDGER (EVAL.md §8).",
+    "",
+    "One question per threshold: which split produced this number? The harness refuses to",
+    "emit a valid run when the answer is 'report' — a threshold selected on the report split",
+    "has been fitted to the numbers it is then used to report, and nothing in the resulting",
+    "file can tell a reader that.",
+    "",
+    "selectedOnSplit vocabulary:",
+    "  tune     — chosen on the dataset's tune split. The normal, correct answer.",
+    "  report   — chosen on the report split. INVALIDATES THE RUN. Must be empty in practice.",
+    "  policy   — fixed by policy, not fitted to data (e.g. Vmax). Never a tuning claim.",
+    "  ops-default — an operational default agreed by the leads, not fitted to data.",
+    "  untuned  — still at the registry default. FUSION.md §5 records the shipped values as",
+    "             'TBD by tuning', so this is the honest current state. A metric resting on an",
+    "             untuned threshold is a pipeline reading, not a tuned operating point, and the",
+    "             harness marks it provisional in summary.md.",
+    "",
+    "A threshold with NO entry here is treated as unrecorded and also blocks the run. 'We do",
+    "not know which split chose it' is not a licence to publish it.",
+    "",
+    "When a threshold IS tuned: change selectedOnSplit to 'tune', put the run-id that did the",
+    "tuning in runId, the UTC date in selectedAtUtc, and your name in owner. That is the whole",
+    "workflow, and it is deliberately small — a provenance rule that is tedious gets skipped."
+  ],
+  "entries": [
+    {
+      "name": "T_FACE_RED",
+      "dataset": "D-FACE",
+      "selectedOnSplit": "untuned",
+      "runId": "bootstrap",
+      "selectedAtUtc": "2026-01-05T00:00:00Z",
+      "owner": "vision",
+      "note": "Shipped default 0.35 is FUSION.md §5's 'TBD by tuning' placeholder, not a fitted value. NOTE: ThresholdName.T_FACE_RED.tuningDataRef reads 'D-FACE report split' — see the spec-conflict section of summary.md."
+    },
+    {
+      "name": "T_FACE_GREEN",
+      "dataset": "D-FACE",
+      "selectedOnSplit": "untuned",
+      "runId": "bootstrap",
+      "selectedAtUtc": "2026-01-05T00:00:00Z",
+      "owner": "vision",
+      "note": "Shipped default 0.55. Same conflict as T_FACE_RED."
+    },
+    {
+      "name": "T_ALIAS_HI",
+      "dataset": "D-SCEN+D-FACE",
+      "selectedOnSplit": "untuned",
+      "runId": "bootstrap",
+      "selectedAtUtc": "2026-01-05T00:00:00Z",
+      "owner": "vision",
+      "note": "R-ALIAS-01 needs supervisor confirmation on top of the similarity threshold; the threshold alone is not the rule."
+    },
+    {
+      "name": "T_WL",
+      "dataset": "D-SCEN",
+      "selectedOnSplit": "untuned",
+      "runId": "bootstrap",
+      "selectedAtUtc": "2026-01-05T00:00:00Z",
+      "owner": "vision",
+      "note": "A-WL-01 fires at any similarity at or above this value."
+    },
+    {
+      "name": "DELTA_MARGIN",
+      "dataset": "D-SCEN",
+      "selectedOnSplit": "untuned",
+      "runId": "bootstrap",
+      "selectedAtUtc": "2026-01-05T00:00:00Z",
+      "owner": "vision",
+      "note": "Runner-up gap: no solo action within delta."
+    },
+    {
+      "name": "MACRO_MARGIN_RED",
+      "dataset": "D-MACRO",
+      "selectedOnSplit": "untuned",
+      "runId": "bootstrap",
+      "selectedAtUtc": "2026-01-05T00:00:00Z",
+      "owner": "vision",
+      "note": "Below this the patch is not trusted and fusion abstains (A-WORN-01). Requires the classifier to exist first."
+    },
+    {
+      "name": "MACRO_MARGIN_AMBER",
+      "dataset": "D-MACRO",
+      "selectedOnSplit": "untuned",
+      "runId": "bootstrap",
+      "selectedAtUtc": "2026-01-05T00:00:00Z",
+      "owner": "vision",
+      "note": "At least one zone at or above this counts as confident enough to disagree (R-PROC-02)."
+    },
+    {
+      "name": "Q_BLUR",
+      "dataset": "D-USAB",
+      "selectedOnSplit": "untuned",
+      "runId": "bootstrap",
+      "selectedAtUtc": "2026-01-05T00:00:00Z",
+      "owner": "vision",
+      "note": "Laplacian variance floor; tuned on novice field runs for a field-like GREY rate under 8%."
+    },
+    {
+      "name": "Q_GLARE",
+      "dataset": "D-USAB",
+      "selectedOnSplit": "untuned",
+      "runId": "bootstrap",
+      "selectedAtUtc": "2026-01-05T00:00:00Z",
+      "owner": "vision",
+      "note": "Glare ratio ceiling."
+    },
+    {
+      "name": "Q_BRIGHT_MIN",
+      "dataset": "D-USAB",
+      "selectedOnSplit": "untuned",
+      "runId": "bootstrap",
+      "selectedAtUtc": "2026-01-05T00:00:00Z",
+      "owner": "vision",
+      "note": "Darkness floor; fail-closed to GREY(G_DARK)."
+    },
+    {
+      "name": "Q_BRIGHT_MAX",
+      "dataset": "D-USAB",
+      "selectedOnSplit": "untuned",
+      "runId": "bootstrap",
+      "selectedAtUtc": "2026-01-05T00:00:00Z",
+      "owner": "vision",
+      "note": "Overexposure ceiling; fail-closed to GREY(G_GLARE)."
+    },
+    {
+      "name": "Q_POSE_YAW",
+      "dataset": "D-USAB",
+      "selectedOnSplit": "untuned",
+      "runId": "bootstrap",
+      "selectedAtUtc": "2026-01-05T00:00:00Z",
+      "owner": "vision",
+      "note": "Yaw ceiling in degrees."
+    },
+    {
+      "name": "Q_POSE_PITCH",
+      "dataset": "D-USAB",
+      "selectedOnSplit": "untuned",
+      "runId": "bootstrap",
+      "selectedAtUtc": "2026-01-05T00:00:00Z",
+      "owner": "vision",
+      "note": "Pitch ceiling in degrees."
+    },
+    {
+      "name": "VMAX",
+      "dataset": "policy",
+      "selectedOnSplit": "policy",
+      "runId": "policy-120kmh",
+      "selectedAtUtc": "2026-01-01T00:00:00Z",
+      "owner": "lead",
+      "note": "120 km/h, fixed by policy (FUSION.md §2 R-TRAV-01) and logged, not fitted. This is a policy value and is never a report-split tuning claim."
+    },
+    {
+      "name": "RECHECK_P",
+      "dataset": "ops",
+      "selectedOnSplit": "ops-default",
+      "runId": "ops-default-5pct",
+      "selectedAtUtc": "2026-01-01T00:00:00Z",
+      "owner": "lead",
+      "note": "5% random full re-check rate. Operational default, supervisor-adjustable and logged (FUSION.md §8)."
+    },
+    {
+      "name": "REVERIFY_DAYS",
+      "dataset": "ops",
+      "selectedOnSplit": "ops-default",
+      "runId": "ops-default-30d",
+      "selectedAtUtc": "2026-01-01T00:00:00Z",
+      "owner": "lead",
+      "note": "30-day re-verification interval for the trust lane."
+    },
+    {
+      "name": "FACILITATOR_MIN_GROUPS",
+      "dataset": "D-SCEN",
+      "selectedOnSplit": "untuned",
+      "runId": "bootstrap",
+      "selectedAtUtc": "2026-01-05T00:00:00Z",
+      "owner": "vision",
+      "note": "A-FAC-01: many crossings sharing at most this many distinct groups."
+    },
+    {
+      "name": "FACILITATOR_WINDOW_DAYS",
+      "dataset": "D-SCEN",
+      "selectedOnSplit": "untuned",
+      "runId": "bootstrap",
+      "selectedAtUtc": "2026-01-05T00:00:00Z",
+      "owner": "vision",
+      "note": "A-FAC-01 window in days."
+    },
+    {
+      "name": "GREY_STREAK_LIMIT",
+      "dataset": "D-USAB",
+      "selectedOnSplit": "untuned",
+      "runId": "bootstrap",
+      "selectedAtUtc": "2026-01-05T00:00:00Z",
+      "owner": "lead",
+      "note": "A-GREY3: three consecutive GREYs is itself a finding, because it is the signature of someone gaming the retake loop."
+    },
+    {
+      "name": "VIZ_DRIFT_TOLERANCE",
+      "dataset": "D-SCEN",
+      "selectedOnSplit": "untuned",
+      "runId": "bootstrap",
+      "selectedAtUtc": "2026-01-05T00:00:00Z",
+      "owner": "vision",
+      "note": "A-VIZ-01: how far the visual zone may drift from the MRZ on a non-check-digit field before it is a finding."
+    }
+  ]
+}

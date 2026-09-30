@@ -1,0 +1,73 @@
+# KASOTI bundle manifest (invariant I12, AT-12 "model swap", THREAT_MODEL.md §3)
+#
+# PURPOSE: verify_bundle.sh checks every bundled model/asset against the SHA-256
+#          recorded here, and DEMO.md §4 lists it as a pre-demo step.
+#
+# STATUS: PARTIALLY POPULATED — one artefact pinned, two not obtainable.
+#   * `blazeface_short.tflite` — OBTAINED, licence verified, hash measured and pinned
+#     below. The line is live: verify_bundle.sh hashes the file and compares.
+#   * `emb_v1.tflite` — NOT OBTAINED, and deliberately so (see the inventory below).
+#   * `uidai_qr_keys.json` — NOT OBTAINED.
+#   The two remaining `REPLACE_ME` placeholders are real: verify_bundle.sh rejects
+#   placeholders and exits non-zero, so a green run today is impossible by construction
+#   and cannot be faked by leaving a line empty. It was previously claimed here that
+#   "NO HASH IS PINNED YET" for anything at all, which stopped being true when the face
+#   detector was adopted (spike 01 §3).
+#
+# NO BINARIES ARE SHIPPED HERE AND NO HASH IS INVENTED. Every hash below was measured
+#   from bytes actually on disk and cross-checked against the two independent records of
+#   the same artefact (THIRD_PARTY.md and docs/spikes/01-face-model.md §3). A hash goes in
+#   only after provenance is recorded there (BUILD.md §6) and someone signs off on it.
+#
+# FORMAT (sha256sum(1) compatible, one entry per line):
+#     <64 lowercase hex chars><two spaces><path relative to the repo root>
+#   Lines beginning with '#' and blank lines are ignored.
+#
+# TO POPULATE (once the files are on disk):
+#     ./scripts/verify_bundle.sh --init
+# `--init` re-hashes every path below and rewrites this file. It refuses to
+# emit a partial manifest: if a listed file is missing it fails, because a
+# manifest that silently omits a model is exactly the failure mode we fear.
+#
+# ---------------------------------------------------------------------------
+# EXPECTED INVENTORY — licence/provenance state as recorded in THIRD_PARTY.md
+# (do not re-derive it here; that table is the single source and it is reviewed)
+# ---------------------------------------------------------------------------
+# eval/models/blazeface_short.tflite   face detector
+#     licence: Apache-2.0, VERIFIED on the model's own MediaPipe model card.
+#       Redistribution in a repo or in a shipped binary is permitted; no rider, no
+#       click-through, no per-user registration. The card also lists "any form of
+#       surveillance or identity recognition" as out of scope, which is a stated-scope
+#       caveat rather than a licence term — carried in docs/spikes/01-face-model.md §6.1
+#       and docs/STATUS.md, and flagged there as needing a decision, not an engineering one.
+#     recorded: THIRD_PARTY.md (face-detector row) and docs/spikes/01-face-model.md §3.
+#     size: 229,746 B. Same file for Android and desktop (DESIGN D1, TFLite on both).
+#
+# eval/models/emb_v1.tflite             embedding model
+#     licence: NOT VERIFIED — and not for want of trying. Seven candidates were
+#       evaluated and all seven were rejected on licence grounds; no weights were
+#       fabricated, approximated or synthesised to fill the slot. Full per-candidate
+#       evidence: docs/spikes/01-face-model.md §2.1, summarised in THIRD_PARTY.md.
+#       This is a recorded decision, not an open gap, and it should not be re-opened as
+#       though nobody had looked.
+#     hash: none — there is nothing to hash.
+#
+# eval/models/emb_v1.sha256             upstream hash note
+#     DOES NOT EXIST. Google publishes no `.sha256` sidecar for the MediaPipe face models
+#       (the sidecar URL returns HTTP 404, verified — THIRD_PARTY.md, and noted in
+#       scripts/models_manifest.tsv). Every pin in this repo is therefore of bytes we
+#       measured ourselves, not of an upstream-published digest. Listed here so the
+#       absence is not rediscovered as a missing file.
+#
+# platform/src/androidMain/assets/uidai_qr_keys.json   QR key slots
+#     provenance: NOT OBTAINED. THIRD_PARTY.md carries an explicit note on this slot.
+#     PATH CAVEAT: there is no `platform/src/androidMain` directory in this tree — the
+#       module has `jvmMain` and `jvmTest` only, because `:platform`'s Android target is
+#       gated on an SDK that is not present. The path below is where the file must land
+#       when it exists; it is listed as an expectation, not as a description of a
+#       directory that is there today. Do not go looking for it.
+#     Do not publish a source URL for these keys that has not been confirmed.
+#
+b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f  eval/models/blazeface_short.tflite
+REPLACE_ME  eval/models/emb_v1.tflite
+REPLACE_ME  platform/src/androidMain/assets/uidai_qr_keys.json

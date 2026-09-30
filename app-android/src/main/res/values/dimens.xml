@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  KASOTI — the three sizes that matter for persona P1 (SPEC §3: gloves, dust, sun, one-handed,
+  3 taps, giant verdict).
+
+  These are the minimum touch targets and type scales the review checklist asks to see
+  un-broken ("RTL/large-font not broken"). They are in `dimens.xml` rather than hard-coded in
+  composables so that a large-font or RTL screenshot review has one place to look, and so the
+  numbers are reviewable without reading Kotlin.
+
+  `min_touch` is 64dp, not Material's 48dp. A gloved hand misses a 48dp target, and a
+  mis-tap in this app means an accusation or a missed screening.
+-->
+<resources>
+    <dimen name="min_touch">64dp</dimen>
+    <dimen name="verdict_giant">96sp</dimen>
+    <dimen name="verdict_large">48sp</dimen>
+    <dimen name="body">20sp</dimen>
+    <dimen name="body_small">17sp</dimen>
+    <dimen name="chip">44dp</dimen>
+    <dimen name="gutter">16dp</dimen>
+</resources>

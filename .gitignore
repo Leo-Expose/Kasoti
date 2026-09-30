@@ -1,0 +1,72 @@
+# Gradle / build
+.gradle/
+build/
+*/build/
+local.properties
+.kotlin/
+captures/
+*.apk
+*.aab
+out/
+
+# Python bytecode caches. `eval/tools/` is the only place Python runs (AGENTS.md §2) and these
+# are build artefacts of it; a `.pyc` committed next to a corpus script is a file nobody reviews
+# and a stale one that shadows the script on a different Python version.
+__pycache__/
+*.py[cod]
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# KASOTI: model binaries and corpora are hash-pinned fetch artifacts, never committed
+# (BUILD.md §3 — apps load from bundled assets only; scripts/fetch_models.sh verifies SHA-256).
+*.tflite
+*.sha256
+eval/data/media/
+!eval/data/**/manifest.csv
+
+# `eval/models/` is excluded with a WILDCARD, not with a bare directory name, because git cannot
+# re-include a file whose parent *directory* is excluded. The trailing `/*` leaves the directory
+# itself visible to the negation rules below, so the three text artefacts the reviewer has to be
+# able to read are committed:
+#
+#   svm_print_v1_synthetic.json  the trained weights, ~50 KB of readable float lists
+#   *_MODEL_CARD.md             per-class metrics, the margin table, and the known-limits list
+#   manifest.json               path + sha256 + the exact command that produced each model
+#
+# A weights file that is not in the repository cannot be reviewed, cannot be reproduced, and
+# cannot be told apart from the one that was actually deployed. Everything else in the directory
+# stays out, and the model *binaries* are excluded again by name below so that adding a .bin
+# alongside a .json is not a way to smuggle an opaque artefact past this rule.
+eval/models/*
+!eval/models/manifest.json
+!eval/models/*_MODEL_CARD.md
+!eval/models/svm_print_v1*.json
+eval/models/**/*.bin
+eval/models/**/*.npz
+eval/models/**/*.npy
+eval/models/**/*.pt
+eval/models/**/*.onnx
+eval/models/**/*.tflite
+eval/models/**/*.h5
+eval/models/**/*.pkl
+eval/models/**/*.joblib
+
+# Run outputs are committed for gate runs only (EVAL.md §1)
+eval/runs/*
+!eval/runs/**/.gitkeep
+
+# Volunteer biometric media must never reach the repo (DATA.md §1)
+eval/data/**/*.png
+eval/data/**/*.jpg
+!eval/data/fixtures/**
+
+# Secrets
+*.jks
+*.keystore
+secrets.properties
+.env
+scripts/provision.local.sh

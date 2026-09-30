@@ -1,0 +1,73 @@
+# KASOTI model-fetch manifest — REAL manifest (spike 01, docs/spikes/01-face-model.md)
+#
+# Consumed by:  ./scripts/fetch_models.sh scripts/models_manifest.tsv
+# Verified by:  ./scripts/verify_bundle.sh   (invariant I12 / AT-12)
+#
+# FORMAT (whitespace separated, one entry per line):
+#     <64 lowercase hex sha256>  <https url>  <destination path, repo-relative>
+# Lines beginning with '#' and blank lines are ignored. The URL MUST be https.
+#
+# Model binaries are NOT committed (.gitignore excludes *.tflite and eval/models/).
+# Each entry is downloaded to a temp file, hashed, and only then moved into place; a
+# file that fails verification is DELETED, never installed. Nothing is ever fetched at
+# runtime — the apps load the same bytes from bundled assets only.
+#
+# ---------------------------------------------------------------------------
+# PROVENANCE OF THE HASHES BELOW (AGENTS.md §8: never invent a hash)
+#
+# Google publishes NO .sha256 sidecar for the BlazeFace model (the sidecar URL returns
+# HTTP 404). Every digest here was MEASURED by us on 2026-09-30 from the bytes served
+# at the URL on that line, using:
+#
+#     ./scripts/fetch_models.sh scripts/models_manifest.tsv --record
+#
+# which downloads, hashes and prints, without installing. A pin produced that way is a
+# pin of an artefact we actually fetched. A pin typed from memory is not, and the script
+# cannot tell the difference — only the operator can.
+#
+# The URLs use the VERSIONED path (`/float16/1/`), never the `/latest/` alias that
+# Google's documentation links to. Both were byte-identical when checked, but `latest`
+# can be repointed under us and a pin against a moving alias is not a pin (RT-E8).
+# ---------------------------------------------------------------------------
+
+# --- face DETECTOR: obtained, licence-verified, adopted ---------------------------
+#
+# BlazeFace short-range, float16. Model card:
+#   https://storage.googleapis.com/mediapipe-assets/MediaPipe%20BlazeFace%20Model%20Card%20(Short%20Range).pdf
+# Licence: Apache-2.0, stated on that card. Redistribution in a repo or a shipped binary
+# is permitted; no rider, no click-through, no per-user registration.
+# Training data: "consented images of people using a mobile AR application".
+# Authors: Valentin Bazarevsky et al. (Google), 2019; card dated 2021-06-09.
+# Paper: arXiv:2006.10204.
+#
+# Stated-scope caveat, carried in docs/spikes/01-face-model.md §6.1 and docs/STATUS.md:
+# the model card lists "any form of surveillance or identity recognition" as explicitly
+# out of scope. Apache-2.0 permits our use; the authors documented the opposite boundary.
+# This is a lead decision, not an engineering one.
+#
+# 229,746 bytes. Android + desktop, same file, TFLite (DESIGN D1).
+b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f  https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite  eval/models/blazeface_short.tflite
+
+# --- face EMBEDDER: NOT OBTAINED ------------------------------------------------
+#
+# There is deliberately NO line here. Seven candidates were evaluated and rejected on
+# licence grounds, and no weights were fabricated, approximated or synthesised to fill
+# the slot. Full evidence per candidate: docs/spikes/01-face-model.md §2.1.
+#
+#   A  sirius-ai/MobileFaceNet_TF    Apache-2.0 code, no TFLite file, trained on
+#                                    MS1M/VGGFace2 (non-commercial data)
+#   B  DXG-INF/GhostFaceNet          upstream repository is gone (HTTP 404)
+#   B' HamadYA/GhostFaceNets         MIT code, .h5 not TFLite, 512-d not 128-d, MS1MV2/3
+#   C  deepghs/edgeface              upstream repository is gone (HTTP 404)
+#   D  MediaPipe face embedder       never published: the mediapipe-models bucket has
+#                                    no face_embedder/ prefix at all
+#   E  InsightFace buffalo_l         "non-commercial research purposes only"; licensing
+#                                    now requires an email (2025-11-24)
+#   F  OpenCV Zoo SFace              ONNX not TFLite, ~37 MB, MS1MV2 training data
+#
+# Consequence: the face layer can locate a face but cannot compare one, so a GREEN
+# 1:1 verdict stays unreachable. `face = null` -> face layer UNAVAILABLE -> GREEN
+# blocked (FUSION.md §7). That is the correct fail-closed behaviour, not a defect.
+#
+# Filling this slot is a LICENSING decision for the lead, not a fetching task for an
+# engineer. See docs/spikes/01-face-model.md §8.

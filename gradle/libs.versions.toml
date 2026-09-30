@@ -1,0 +1,90 @@
+# KASOTI — version catalog. EVERY dependency is pinned here (BUILD.md §2).
+# Adding a version without a 5-line ADR in the PR is a review fail (AGENTS.md §5).
+
+[versions]
+kotlin = "2.1.21"
+agp = "8.9.2"
+coroutines = "1.10.2"
+serialization = "1.8.0"
+tflite = "2.17.0"
+tess4j = "5.13.0"
+composeMultiplatform = "1.8.0"
+androidxActivityCompose = "1.10.1"
+androidxCore = "1.15.0"
+androidxLifecycle = "2.8.7"
+camerax = "1.4.1"
+tfliteSupport = "0.4.4"
+# --- :app-android additions. Every entry below is APPEND-only; existing pins are untouched.
+# ADR notes for each are in app-android/build.gradle.kts (AGENTS.md §5).
+composeBom = "2024.12.01"          # matches androidx 1.7.x, the level activity-compose 1.10.1 targets
+mlkitTextRecognition = "16.0.1"    # BUNDLED artifact. The com.google.android.gms variant is BANNED.
+mlkitBarcodeScanning = "17.3.0"    # BUNDLED artifact, same reason.
+detekt = "1.23.8"
+ktlint = "12.3.0"
+# --- :platform desktop-TFLite additions (spike 01). APPEND-only, existing pins untouched.
+# There is NO first-party TFLite JVM artifact: org.tensorflow:tensorflow-lite:2.17.0 on Maven
+# Central is a relocation stub to com.google.ai.edge.litert (AAR), and every earlier version is
+# AAR-only with no .jar published. ai.djl.tflite republishes the real TFLite Java API plus
+# desktop JNI natives. Rationale + full citation: docs/spikes/01-face-model.md §4.
+djlTfliteEngine = "0.27.0"          # genuine org.tensorflow.lite.* Java API (Apache-2.0)
+djlTfliteNative = "2.6.2"          # desktop libtensorflowlite_jni; linux-x86_64 + osx-x86_64 only
+
+# --- static analysis. APPEND-only. Both plugins are applied from the ROOT
+# build.gradle.kts (not per module) so the wiring lives in one place; the 5-line ADRs
+# for each are there, per AGENTS.md §5. `ktlint` above is the *plugin* version, not the
+# ktlint engine version; the engine is pinned separately below so the two cannot drift.
+ktlintEngine = "1.5.0"          # ktlint CLI/ruleset used by the plugin; supports Kotlin 2.1.x
+
+[libraries]
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
+
+tflite = { module = "org.tensorflow:tensorflow-lite", version.ref = "tflite" }
+tflite-gpu = { module = "org.tensorflow:tensorflow-lite-gpu", version.ref = "tflite" }
+tflite-support = { module = "org.tensorflow:tensorflow-lite-support", version.ref = "tfliteSupport" }
+tess4j = { module = "net.sourceforge.tess4j:tess4j", version.ref = "tess4j" }
+
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidxActivityCompose" }
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidxCore" }
+androidx-lifecycle-runtime = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "androidxLifecycle" }
+androidx-camera-core = { module = "androidx.camera:camera-core", version.ref = "camerax" }
+androidx-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camerax" }
+androidx-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camerax" }
+androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "camerax" }
+kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
+
+# Compose runtime. The BOM pins the whole set at one version so the compiler plugin and the
+# runtime cannot drift apart.
+androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+androidx-compose-ui = { module = "androidx.compose.ui:ui" }
+androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
+androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
+
+# ML Kit, BUNDLED models only. `com.google.android.gms:play-services-mlkit-*` downloads a model
+# at runtime and would break invariant I4 and the airplane-install proof (BUILD.md §4).
+mlkit-text-recognition = { module = "com.google.mlkit:text-recognition", version.ref = "mlkitTextRecognition" }
+mlkit-barcode-scanning = { module = "com.google.mlkit:barcode-scanning", version.ref = "mlkitBarcodeScanning" }
+
+# Desktop TFLite runtime (spike 01 §4). Not a TensorFlow dependency — the two jars together
+# provide the TFLite Java API and the desktop JNI library. Both Apache-2.0.
+# NOTE: the native classifier is applied in :platform/build.gradle.kts because version
+# catalogs cannot express a classifier. Windows x86-64 and osx-aarch64 do NOT exist upstream.
+djl-tflite-engine = { module = "ai.djl.tflite:tflite-engine", version.ref = "djlTfliteEngine" }
+djl-tflite-native = { module = "ai.djl.tflite:tflite-native-cpu", version.ref = "djlTfliteNative" }
+
+detekt-formatting = { module = "io.gitlab.arturbosch.detekt:detekt-formatting", version.ref = "detekt" }
+
+[plugins]
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
+# Append-only: the ktlint Gradle plugin. `version.ref = "ktlint"` is the already-pinned
+# 12.3.0 (the *plugin*, not the ktlint CLI). See the ADR block in the root build.gradle.kts.
+ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint" }

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  KASOTI — :app-android manifest.
+
+  Two things here are policy rather than plumbing, and both are load-bearing:
+
+  1. `android:allowBackup="false"` (NFR-P2). A diary is a biometric log. Android's auto-backup
+     would copy it to Google Drive, which is exactly the readable roll of who crossed where
+     that THREAT_MODEL.md §4 forbids. There is also no `android:dataExtractionRules` allowing a
+     cloud backup, so a device-to-device transfer does not carry it either.
+
+  2. `android:usesCleartextTraffic="false"` plus the network-security config below. KASOTI has no
+     network client at all, and this makes that structural: a future dependency that tries to
+     open a socket over HTTP fails, and the CI grep in README.md §"No network" is the belt to
+     this braces. The one permitted domain is `localhost`, which is needed only by the debug
+     tooling's own loopback and is itself blocked in release by `cleartextTrafficPermitted`
+     being absent there.
+
+  NOT REQUESTED, deliberately:
+    * No `INTERNET`, `ACCESS_NETWORK_STATE` or `ACCESS_WIFI_STATE` permission. Their absence is
+      the strongest possible statement of invariant I4, and it is enforced by the OS rather
+      than by our good intentions.
+    * No location. SPEC N1/N2 forbid a central database and the travel rule (R-TRAV-01) works on
+      *post-to-post* distances from SYNC.md's post coordinates, not on the person's position.
+    * No `WRITE_EXTERNAL_STORAGE` or `READ_MEDIA_IMAGES`: the app writes only to its own
+      app-scoped storage, which needs no permission on any supported API level.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!--
+      `required="false"` so the app still *installs* on a device without a camera. It then shows
+      the permission card with a recovery line rather than being uninstallable at a post that
+      happens to have a broken handset — a device that cannot install the app is a device that
+      cannot be screened.
+    -->
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <!-- The macro clip needs a torch for UV (FR-F2). Absent is reported as UNSUPPORTED, not as
+         "no UV", so a device without one is degraded honestly rather than silently. -->
+    <uses-feature android:name="android.hardware.camera.flash" android:required="false" />
+
+    <application
+        android:name=".KasotiApp"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:usesCleartextTraffic="false"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Kasoti">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.Kasoti">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+    </application>
+
+</manifest>

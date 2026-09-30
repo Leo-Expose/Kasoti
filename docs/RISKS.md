@@ -1,0 +1,35 @@
+# KASOTI — Risk Register (RISKS.md)
+
+Score = P×I (1–5). Review weekly; tripwire breach → owner acts within 24 h.
+
+> **Owner column: there is one owner.** The project is solo-maintained
+> (`docs/HANDOFF.md` §2), so the original role names — Vision, Android, Desktop, Demo,
+> Q&A-Policy — do not denote anyone. Each row says who must act, and the honest answer is the
+> maintainer. Statuses were re-measured 2026-09-29; `docs/STATUS.md` §5 is the wider,
+> command-backed register and the two cross-reference.
+
+| ID | Risk | P×I | Tripwire | Mitigation | Owner | Status (2026-09-29) |
+|---|---|---|---|---|---|---|
+| R1 | Embed-model license/conversion fails | 3×5 | M0-d5 spike | candidates A/B/C + TFLite-everywhere (no conversion); fallback split-detector allowed | maintainer | **DECIDED and BLOCKED.** 7 candidates evaluated, all rejected on licence grounds; 2 upstream repos 404. TFLite-everywhere holds. Consequence: `face = null` → layer UNAVAILABLE → **GREEN 1:1 unreachable**, fail-closed. Not an engineering risk any more — a permissions decision. Spike 01, STATUS R-A |
+| R2 | Macro accuracy collapses outdoors/no-clip | 4×4 | M0 numbers | clip-mandatory protocol + polarizer + calibration; AMBER-only fallback | maintainer | **open, and unmeasurable today.** No D-MACRO media, no calibration, no built clip. The only model is SYNTHETIC and never gate-eligible. This risk is currently *unquantified*, which is worse than quantified-and-bad. STATUS R-D/R-E |
+| R3 | ML Kit size/ToS breaks APK budget | 2×4 | M0-d6 | fallback Tess-android; budget check in CI | maintainer | **unmeasurable.** No APK has ever been built, so neither the size nor the budget check has run. Declared in the catalog, never compiled. STATUS R-C |
+| R4 | Desktop TFLite natives missing (an OS) | 3×3 | M2-d3 | review-only label for that OS; run-from-source fallback | maintainer | **CONFIRMED and now permanent for two OSes — re-probed 2026-09-30, not estimated.** `ai.djl.tflite` publishes only `linux-x86_64` / `osx-x86_64` (3,382,784 B and 7,073,184 B) across its only two versions, `2.4.1` and `2.6.2`; `windows-x86_64` and Apple-Silicon Mac are HTTP 404 and **a version bump will not fix it**. There is also no first-party fallback: `org.tensorflow:tensorflow-lite:2.17.0` is a 1,411-byte POM-relocation stub to an AAR, earlier versions publish no `.jar` at all, no `<os>` classifier exists, and the AAR's own natives link Bionic (`readelf -d` → `libc.so`, not `libc.so.6`). `TfliteRuntime.availability()` reports review-only at runtime. **Now consistent across `BUILD.md` §4, `DESIGN.md` §1/D1/§3, `ROADMAP.md` M2.2 + the M2-d3 tripwire, and spike 01 §4** — including `DESIGN.md` §3's "shared NMS", which was wrong: the decode is *duplicated* per platform, and that is what `app-android`'s new parity test exists to hold in step. Spike 01 §4, STATUS R-T |
+| R5 | Tess4J packaging pain | 3×3 | M2-d3 | manual-MRZ fallback is P0-acceptable for console | maintainer | **open, untriaged.** The Tess4J engine and manual fallback both exist and pass 137 platform tests; the *packaging* question is unanswered because desktop packaging was never started (`packageDistributionForCurrentOS` is not a task). Build §3, STATUS §4.5 |
+| R6 | No e-passport sample (NFC untested live) | 4×2 | M2-d8 | honest stub + BAC unit tests; P1 label | maintainer | accepted |
+| R7 | UIDAI key provenance/rotation unclear | 3×3 | M1 review | test-key fixtures + rotation doc + stale-key AMBER behavior | maintainer | **open, and the key was never obtained.** `uidai_qr_keys.json` has no confirmed source, so the Q gates certify `:core` key selection against a per-JVM harness stub, not the production binding. THIRD_PARTY §3, STATUS R-B |
+| R8 | Face FRR/FAR misses floor on our pairs | 3×4 | M1.6 tune | AMBER-biased policy; threshold per quality; report honestly | maintainer | **unmeasurable, twice over.** No D-FACE pairs *and* no embedder. `F-GATE-01`/`F-GATE-03` are SKIPPED with reasons in run `eval-20260929-full-fd65`. `T_FACE_RED`/`T_FACE_GREEN` sit at untuned defaults. STATUS R-A/R-E |
+| R9 | Scope creep / P2 smuggling | 4×4 | any P2 PR | SPEC tier gate + hour-0 freeze + P0 board | maintainer | guarded |
+| R10 | Venue lighting kills macro demo | 3×4 | M3 venue check | desk lamp + shroud + recalibrate + AMBER-path demo ready | maintainer | **open, and the rehearsal has not happened.** `DEMO.md` §6's log is empty. |
+| R11 | Privacy/legal hostile Q&A | 3×4 | M3 mock panel | THREAT §4–5 + wipe drill + disclaimer-first presenting | maintainer | guarded, but **the Q&A has never been rehearsed aloud** and the `:core` PII scrubber is missing, so one QA_BANK answer (Q18) has to concede a gap rather than assert a control. STATUS §4.1 |
+| R12 | Key member unavailable | 2×5 | — | knowledge map bus-factor ≥2 (HANDOFF §5); freeze-day pairing | maintainer | **ACCEPTED, NOT MITIGATED — and formally unmeetable in a one-person project.** `HANDOFF.md` §5's backup column reads "none" on every row. P has been *raised* from 2 to a near-certainty by the staffing change, not reduced. The only real mitigations are that `docs/` + the commit history are the whole state of the project, and `STATUS.md` §7 names the next five things |
+| R13 | Merge conflicts on diary across 3+ devices | 2×3 | M2.4 drill | append-only + idempotent tests; scribe-verified drill | maintainer | **open, un-drilled.** The mechanism is well tested (`SyncTest`: 3-shuffle merge determinism, idempotence, quarantine, 100k-record budget) but **only one device has ever existed**, so the cross-device property is untested in the only way that counts |
+| R14 | Overclaim relapse in deck | 3×5 | M3 deck review | every number needs run-id; gallery mandatory; lead signs deck | maintainer | **the highest-value row in this register, and it has already fired.** A docs audit found: a cited eval run-id that did not exist, a hand-typed latency range with no provenance, a "₹300" cost that the BOM contradicts, a "50 KB model in 30 ms" line, "we measured everything" in QA_BANK, and a "100% mutate-catch" headline that hid 746 structurally blind rows. All corrected. The gallery is still **empty** — no red-team day has been run — so R14's second half ("gallery mandatory") is unmet |
+
+Decision dates: embed/detector **closed 2026-09-30** (spike 01) · OCR route undecided and now
+unmeasurable without a build · desktop packaging fallback = run-from-source, taken by default ·
+P1 cuts at M2 review · freeze M4-h0.
+
+**Cross-references.** `docs/STATUS.md` §5 carries the open-risk register with command output
+behind each row, including four this file does not: no git remote (R-S), no CI run (R-J), no
+dependency-verification metadata (R-H), and the exFAT volume that ignores `chmod` and makes any
+0600 secret written inside the checkout world-readable (R-Q).

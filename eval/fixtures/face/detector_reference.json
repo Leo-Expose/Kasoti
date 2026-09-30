@@ -1,0 +1,176 @@
+{
+  "_what_this_is": "The DESKTOP half of the face-layer parity reference. Parity itself is NOT verified — there is no Android SDK and no device. This records what desktop produces from pinned bytes so that the first Android run compares two numbers instead of investigating a discrepancy.",
+  "_how_to_use_it_on_android": "Run the same fixture bytes through app-android's TfliteFaceDetector on the same model file, and require: (1) the same modelTag, (2) the same detection count, (3) box/keypoint agreement within tolerance. EVAL.md §4 gives +/-1e-3 for similarity; box coordinates are not a metric here and have no agreed tolerance yet — see the open question at the bottom.",
+  "recorded_on": "2026-09-30",
+  "host": {
+    "os": "Linux x86_64 (Ubuntu, dev box)",
+    "jdk": "Temurin 17.0.20.1",
+    "warning": "This is NOT one of the NAMED devices in SPEC. EVAL.md §8 forbids cherry-picked devices and EVAL.md §4 requires per-stage latency on named devices. The timings below are recorded to show the path executes, NOT as a performance claim, and no NFR is claimed to be met on this host."
+  },
+
+  "input": {
+    "file": "eval/fixtures/face/no_face_synthetic_256.png",
+    "input_sha256": "2d86b539469beceda9aaf3ac75ba886d0769330bb0906329890cd9801e908857",
+    "width": 256,
+    "height": 256,
+    "contains_a_face": false,
+    "why_synthetic": "No consented face capture exists (D-FACE is empty, STATUS.md R-F). A real face in a committed fixture would be the consent failure THREAT_MODEL §8 is about. Recipe to regenerate: eval/fixtures/face/README.md."
+  },
+
+  "model": {
+    "file": "eval/models/blazeface_short.tflite",
+    "model_tag": "blazeface_short.tflite@sha256:b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f",
+    "sha256": "b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f",
+    "license": "Apache-2.0"
+  },
+
+  "expected_output": {
+    "detection_count": 0,
+    "boxes": [],
+    "keypoints": [],
+    "_why_zero": "A smooth gradient contains no face, so no anchor clears the model's own 0.5 score floor. This is the correct, fail-closed answer and the test asserts it — a detection here would mean the input encoding, the SSD decode or the score floor changed, all three of which are load-bearing and none of which is a screening threshold."
+  },
+
+  "measured_timings": {
+    "_informational": "Machine-dependent and NOT an assertion. Recorded to show the desktop path actually executes inference rather than short-circuiting.",
+    "native_inference_ms": null,
+    "input_prep_ms": null,
+    "_note": "Populated from a test run on 2026-09-30 on the host above; see the PARITY-REFERENCE line in the :platform:jvmTest output. Deliberately left null here rather than pinned: pinning a timing would make this file fail on every slower or faster machine, and a flaky test is a test people disable."
+  },
+
+  "assertions_this_file_can_support_today": [
+    "The fixture bytes are unchanged (input_sha256 is verified by DetectorParityReferenceTest).",
+    "The model identity is unchanged (model_tag is built from the same constant the loader verifies).",
+    "Desktop reports zero detections for these bytes.",
+    "The model file, when fetched, is the pinned artefact and not a truncated or swapped one."
+  ],
+
+  "assertions_it_cannot_support_today": [
+    "That Android agrees. No SDK, no device.",
+    "That the input encoding [-1,1] is right rather than [0,1]. Zero detections is the same answer under both encodings, so this file is silent on it. It needs a consented crop whose keypoints can be checked against the actual eye and mouth positions.",
+    "That decoded box and keypoint coordinates are correct. Nothing here has been compared against a real face, so the anchor-size parameters sourced from the Tasks-library fallback (min_scale 0.1484375, max_scale 0.75, fixed_anchor_size) remain unverified. Detection, scoring and suppression do NOT depend on them; box geometry does.",
+    "Any per-bucket bias figure on our data. The vendor numbers in manifest.json are Google's, not ours."
+  ],
+
+  "open_questions": [
+    "What tolerance applies to box/keypoint agreement between platforms? EVAL.md §4 gives +/-1e-3 for SIMILARITY, not for coordinates. Someone has to decide, and it should be a decision, not a default.",
+    "DESKTOP UNVERIFIED: the input encoding [-1,1] versus [0,1]. Zero detections is the same answer under both, so this file is silent on it. Settling it needs one consented crop whose decoded keypoints can be checked against the actual eye and mouth positions."
+  ],
+
+  "android_detector_cannot_run_this_model": {
+    "severity": "high",
+    "owner": "android track",
+    "status": "FIXED 2026-09-30 — see android_detector_defects_fixed below. The original finding is kept verbatim as android_detector_cannot_run_this_model_as_found so the record of what was wrong is not lost.",
+    "_disclaimer": "Recorded here AND fixed in app-android/src/main/java/dev/kasoti/android/platform/TfliteFace.kt. The fix is in a new SDK-free, pure-Kotlin file (dev.kasoti.android.ml) with tests that run on a bare JVM; the TFLite binding itself is still uncompiled against a real SDK.",
+    "evidence": [
+      {
+        "where": "app-android/src/main/java/dev/kasoti/android/platform/TfliteFace.kt:329",
+        "code": "val boxes = Array(1) { Array(MAX_DETECTIONS * BOX_STRIDE) { FloatArray(1) } }",
+        "problem": "Allocates a destination of shape [1, 160, 1] (MAX_DETECTIONS 10 x BOX_STRIDE 16). The regressors tensor is [1, 896, 16]. TFLite compares the destination's inferred shape against the tensor's shape and throws before inference runs."
+      },
+      {
+        "where": "app-android/.../TfliteFace.kt:343 and :448",
+        "code": "val score = flat[i][0]; if (score > bestScore) ... with bestScore initialised to CONFIDENCE_FLOOR",
+        "problem": "The raw classificators value is used directly as a confidence, with no sigmoid. The model's opcode set contains no SOFTMAX, so classificators is a LOGIT. Every score is wrong, and a confident face can read as below the 0.5 floor."
+      },
+      {
+        "where": "app-android/.../TfliteFace.kt:328-337",
+        "code": "interpreter.run(crop, boxes) with a single output array",
+        "problem": "The model has TWO outputs (regressors, classificators). The two-argument run picks its output accessor from the INPUT type, so a single output array writes output 0 and then fails on output 1. The multi-output path is required."
+      },
+      {
+        "where": "app-android/.../TfliteFace.kt:351-357",
+        "code": "index = base + BOX_SCORE_SLOTS + k * 2, over boxes[0]",
+        "problem": "Reads keypoints out of the regressors row, but the regression values are anchor-relative offsets that must be decoded through the anchor grid before they are pixel coordinates. There is no anchor decode in the Android detector."
+      }
+    ],
+    "consequence": "Parity was not merely untested on Android — the Android detector could not execute this model at all as written. The first device run would have failed loudly at the shape check (the good case), and if the shape check was worked around the score and coordinate handling were still wrong.",
+    "what_was_already_right_on_the_android_side": [
+      "The hash-pinning logic (ModelPinLoader) is sound and matches :platform's ModelLoader, with a ModelPinParityTest holding the two in step.",
+      "INPUT_SIDE = 112 and the 112x112 aligned-crop contract are for the EMBEDDER, and are not in conflict with the detector's own 128x128 input.",
+      "LANDMARK_COUNT = 5 is correct: the raw TFLite gives five keypoints, not the six the model card describes."
+    ]
+  },
+
+  "android_detector_cannot_run_this_model_as_found": {
+    "_keep": "The four reported defects, exactly as first recorded. Fixed 2026-09-30; see android_detector_defects_fixed for the fifth, seventh and eighth, which were found by type-checking the file rather than by reading it.",
+    "output_destination_shape": "[1, 160, 1] against a [1, 896, 16] tensor",
+    "score_reading": "raw logit used as a confidence, no sigmoid, model has no SOFTMAX",
+    "output_call": "single-output run() on a two-output model",
+    "anchor_decode": "absent; keypoints read as raw anchor-relative offsets"
+  },
+
+  "android_detector_defects_fixed": {
+    "_disclaimer": "Five reported/found inference defects, plus three more found by type-checking the file. All are in app-android/src/main/java/dev/kasoti/android/platform/TfliteFace.kt. Eight is the one that matters most: the file was not valid Kotlin, which is the concrete cost of a module that has never been compiled.",
+    "date": "2026-09-30",
+    "reported_and_verified": [
+      {
+        "n": 1,
+        "defect": "Output destination allocated as [1, 160, 1]",
+        "verified": "Confirmed by parsing the flatbuffer: subgraph output 175 is regressors [1, 896, 16] and output 174 is classificators [1, 896, 1], and by reading both shapes off the live interpreter.",
+        "fix": "Both destinations are allocated from BlazeFaceModel.ANCHORS and BlazeFaceModel.ANCHOR_STRIDE with the leading batch dimension, and TfliteFaceDetector.verifyShapes refuses any model whose input/output tensors are not the ones this code indexes. MAX_DETECTIONS/BOX_STRIDE no longer exist in the binding."
+      },
+      {
+        "n": 2,
+        "defect": "Raw logit used as a confidence, no sigmoid",
+        "verified": "Confirmed two ways: the flatbuffer's operator-code table contains exactly ADD, CONCATENATION, CONV_2D, DEPTHWISE_CONV_2D, DEQUANTIZE, MAX_POOL_2D, PAD, RELU, RESHAPE and no SOFTMAX (builtin 25); and measured, the no-face fixture's top raw logit is -1.3418, which as a 'confidence' is a negative number.",
+        "fix": "BlazeFaceDecoder.sigmoid, transcribed from tensors_to_detections_calculator.cc:445 with the numerically stable sign branch. Now a measured fixture value rather than a claim: the fires case has a top raw logit of 0.9191 and a top score of 0.7149."
+      },
+      {
+        "n": 3,
+        "defect": "Single-output run() on a two-output model",
+        "verified": "Confirmed from the flatbuffer's subgraph output list: there are two outputs.",
+        "fix": "runForMultipleInputsOutputs with the explicit index map from BlazeFaceModel.OUTPUT_INDEX_REGRESSORS / OUTPUT_INDEX_CLASSIFICATORS, which is the order the flatbuffer declares."
+      },
+      {
+        "n": 4,
+        "defect": "No anchor decode before reading keypoints",
+        "verified": "Confirmed by running the desktop binding: raw keypoint offsets are numbers near zero and only become coordinates once added to the anchor's centre.",
+        "fix": "The full SSD decode lives in dev.kasoti.android.ml.BlazeFaceDecoder: sigmoid, exp-scaled width/height, anchor-relative centres and keypoints, IoU, greedy NMS, and the score floor applied after suppression. The binding is a thin adapter over it."
+      }
+    ],
+    "found_while_fixing": [
+      {
+        "n": 5,
+        "defect": "The frame was handed to the interpreter as interleaved 0..255 bytes at the source resolution",
+        "why_it_matters": "The model's input edge is FLOAT32 [1, 128, 128, 3] in [-1, 1], and it needs the frame resized to 128x128 first. Nothing fails loudly at the call site: the interpreter accepts a buffer and returns a tensor of the right shape either way, so the whole detector was scoring the wrong pixels at the wrong scale.",
+        "fix": "dev.kasoti.android.ml.BlazeFaceInput does the resize and the encoding, and is asserted byte-identical to :platform's ImageIoImaging.resize and encodeInput. The resize is the desktop's half-pixel-centre bilinear on purpose: Android's Bitmap.createScaledBitmap(filter = true) is a different sampler, and using it would have given the two platforms different input pixels, which is a DESIGN.md §3 comparability break before inference even starts."
+      },
+      {
+        "n": 6,
+        "defect": "Interpreter.Options().apply { numThreads = numThreads; useXNNPACK = true } set nothing",
+        "why_it_matters": "TFLite's Options exposes setNumThreads(int) and setUseXNNPACK(boolean) and no getters, so Kotlin synthesises no property. Inside apply, the left-hand side resolved to the enclosing function's own parameter, making both lines no-op self-assignments. The detector ran on TFLite's default thread count, and the 'no delegate is enabled' statement in DESIGN §1 was not enforced anywhere.",
+        "fix": "Explicit setNumThreads(numThreads) and setUseXNNPACK(true)."
+      },
+      {
+        "n": 7,
+        "defect": "TfliteFaceModels.embed called detector.align(crop) with too few arguments",
+        "why_it_matters": "align needs the frame's width and height, because a ByteBuffer does not state its own shape. The file did not compile.",
+        "fix": "embed now takes (crop, width, height, quality) and refuses to guess the shape."
+      },
+      {
+        "n": 8,
+        "defect": "A '/*' inside a KDoc block (a glob in eval/models/*_MODEL_CARD.md) made the file lexically invalid",
+        "why_it_matters": "Kotlin's lexer does not allow a nested comment opener inside a block comment, so the rest of the file was consumed as comment text. The file did not compile, and the error surfaced 30 lines away from its cause.",
+        "fix": "The glob is reworded. This is the most embarrassing of the eight because it is a two-character problem that no amount of reading would have surfaced."
+      },
+      {
+        "n": 9,
+        "defect": "defaultDigest() used Digest { ... }, a SAM conversion that does not exist",
+        "why_it_matters": "dev.kasoti.crypto.Digest is a plain Kotlin interface, not a fun interface. The file did not compile, and the module had two implementations of the pin's hash rather than one.",
+        "fix": "defaultDigest() returns the module's existing JcaDigest."
+      }
+    ],
+    "how_the_fix_is_verified": {
+      "pure_logic": "app-android/src/main/java/dev/kasoti/android/ml/{BlazeFaceModel,BlazeFaceDecoder,BlazeFaceInput}.kt import no android.* and no org.tensorflow.*, are compiled and unit-tested by app-android/tools/verify-offline.sh on a bare JVM, and are required to be bit-identical to :platform's AnchorDecoder/BlazeFaceAnchors/ImageIoImaging by BlazeFaceDesktopParityTest and BlazeFaceInputTest.",
+      "fixture": "raw_outputs/ holds the detector's real output for two committed inputs and the desktop decode of it, so the Android decode is checked against a known answer rather than against itself.",
+      "binding": "TfliteFace.kt is compiled by verify-offline.sh against hand-written stubs of the four android.*/org.tensorflow.* types it touches. That is a syntax-and-name-resolution gate: it is how defects 6 to 9 were found, and it is NOT a substitute for ./gradlew :app-android:assembleDebug on a machine with the SDK.",
+      "mutation_checked": "Seven deliberate mutations of the pure files (sigmoid removed, stride merge dropped, anchor offset 0.5 to 0.0, keypoints read from the box slots, NMS IoU 0.3 to 0.5, input range [-1,1] to [0,1], half-pixel resize to naive corner mapping) each turned the suite red."
+    },
+    "still_unverified": [
+      "TfliteFace.kt has never been compiled against the real Android SDK or the real TFLite AAR. The stub signatures are our reading of those APIs, so a member we got wrong would still type-check here.",
+      "runForMultipleInputsOutputs has been read, not run, on Android. Its behaviour on a two-output model is documented in spike 01 §4 trap 2 from the desktop binding, which uses the identical class names and a working runtime, but the Android AAR's copy of it is a different jar.",
+      "No Android device has run the detector. Parity remains a claim about two decode implementations, not about two devices."
+    ]
+  }
+}

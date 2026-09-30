@@ -1,0 +1,129 @@
+{
+  "_comment": [
+    "NORMATIVE face-layer reference. Both platforms must agree on every value here.",
+    "DESIGN.md §3 comparability law; EVAL.md §4 parity tolerance is +/-1e-3 on similarity.",
+    "Parity is NOT verified: there is no Android SDK and no device. This file makes the",
+    "check mechanical the moment one exists. See eval/fixtures/face/README.md.",
+    "Provenance and licence: docs/spikes/01-face-model.md, THIRD_PARTY.md §3."
+  ],
+
+  "schema_version": 1,
+  "recorded_on": "2026-09-30",
+  "recorded_by": "face/vision track (spike 01)",
+
+  "detector": {
+    "name": "blazeface_short.tflite",
+    "model_tag": "blazeface_short.tflite@sha256:b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f",
+    "sha256": "b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f",
+    "size_bytes": 229746,
+    "source_url": "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+    "license": "Apache-2.0",
+    "_source_url_note": "The VERSIONED path, never the /latest/ alias. Both were byte-identical when checked, but `latest` can be repointed under us and a pin against a moving alias is not a pin (RT-E8).",
+    "hash_provenance": "MEASURED by us on 2026-09-30 from the bytes at the URL above. Google publishes no .sha256 sidecar for this model (sidecar URL returns 404), so the pin is of an artefact we actually fetched, not one copied from a publisher manifest. Reproduce with: ./scripts/fetch_models.sh --record",
+
+    "input": {
+      "tensor_name": "input",
+      "dtype": "FLOAT32",
+      "shape": [1, 128, 128, 3],
+      "quantization": "none",
+      "layout": "NHWC",
+      "encoding": {
+        "_status": "NOT VERIFIED — see the two entries below. This is the one open fork.",
+        "value_range": [-1.0, 1.0],
+        "formula": "(v / 255.0) * 2.0 - 1.0, where v is the 0..255 channel sample",
+        "authority": "The model's own card: 'RGB image ... resized to 128x128 pixels, represented as a 128x128x3 array of float values in the range [-1.0, 1.0]'.",
+        "excluded_by_measurement": "0..255 is ruled out: it drives the regressor output to absmax ~4.2e6 versus ~1.6e2 for the normalised encodings. Measured 2026-09-30.",
+        "unresolved_fork": "[0,1] versus [-1,1] is a one-unit DC offset per channel and cannot be separated without an image the detector actually fires on, which needs a consented face crop (D-FACE is empty).",
+        "risk_if_wrong": "Bounded. Both platforms apply the same transform, so the comparability law still holds. A wrong pick costs accuracy, never correctness — it cannot make a wrong face match a right one.",
+        "how_to_settle": "Add one consented crop to eval/fixtures/face/crops/ and compare the decoded keypoint positions against the face's actual eye and mouth locations. The correct encoding puts them on the face."
+      }
+    },
+
+    "outputs": {
+      "regressors": { "tensor_name": "regressors", "dtype": "FLOAT32", "shape": [1, 896, 16] },
+      "classificators": { "tensor_name": "classificators", "dtype": "FLOAT32", "shape": [1, 896, 1] },
+      "has_inner_softmax": false,
+      "_softmax_note": "SOFTMAX is absent from the model's opcode set (ADD, CONCATENATION, CONV_2D, DEPTHWISE_CONV_2D, DEQUANTIZE, MAX_POOL_2D, PAD, RELU, RESHAPE). classificators is therefore a LOGIT and the caller applies the sigmoid. Reading it as a probability flattens a confident detection to ~0.5.",
+      "anchor_layout": "4 box + 2 keypoint scores + 10 keypoint coordinates (5 points x xy)",
+      "keypoint_count": 5,
+      "_keypoint_note": "FIVE, not the six the model card describes. The card documents the Tasks-library output, which synthesises a sixth point. app-android's TfliteFaceDetector already uses LANDMARK_COUNT = 5 and is correct."
+    },
+
+    "decode": {
+      "_authority": "mediapipe/calculators/tensor/tensors_to_detections_calculator.cc lines 822-831 and 864-867, plus the sigmoid at line 445. The graph config is mediapipe/modules/face_detection/face_detection_short_range.pbtxt.",
+      "num_boxes": 896,
+      "x_scale": 128.0,
+      "y_scale": 128.0,
+      "w_scale": 128.0,
+      "h_scale": 128.0,
+      "min_score_thresh": 0.5,
+      "anchor_structure": "stride-8 group: 16x16 cells x 2 anchors = 512. stride-16 layers 1,2,3 MERGE into one 8x8 group x 6 anchors = 384. 512 + 384 = 896, which equals the num_boxes the graph declares. The merge is the detail that is easy to miss; dropping it yields 768.",
+      "nms_iou_threshold": 0.3,
+      "max_detections": 10,
+      "_nms_note": "0.3 and 10 are anchor-layout properties and the model card's own cap, not screening thresholds. Screening thresholds live in ThresholdRegistry and nowhere else (AGENTS.md §2).",
+      "box_units": "normalised [0,1] input-image units, as MediaPipe's decoder leaves them; the caller scales to source pixels"
+    },
+
+    "operating_envelope": {
+      "_authority": "model card, 'Factors and Subgroups' and 'Evaluation results'",
+      "min_box_fraction_of_image": 0.20,
+      "max_tilt_degrees": 45,
+      "max_yaw_degrees": 90,
+      "min_box_visible_fraction": 0.70,
+      "note": "Google's EVALUATION sets use a >=15% threshold while the operating domain is >=20%. A capture outside this envelope is not evidence of 'no face present'; it is evidence the detector was asked for something it was not evaluated for. Nothing in our pipeline checks this yet."
+    }
+  },
+
+  "embedder": {
+    "available": false,
+    "model_tag": null,
+    "dimension": 128,
+    "reference_vectors": null,
+    "reason": "No permissively-licensed 128-d TFLite face-embedding checkpoint could be obtained. Seven candidates evaluated, all rejected; none fabricated, approximated or synthesised.",
+    "licensing_decision": "2026-09-30, project lead. A research-licensed embedder is acceptable FOR THE PROTOTYPE ONLY, because the deliverable is a SIH demonstration and research evaluation (README.md §License), which is a non-commercial research context. Three consequences are binding and are not soft commitments: (1) the embedder may not ship in an operational deployment; (2) licence obligations attach to redistribution and must be carried in THIRD_PARTY.md; (3) the vendor-documented out-of-scope/use restrictions and the measured skin-tone (5.3 pp) and regional (7.5 pp) recall gaps must be disclosed, not discovered by a judge. The operational-deployment caveat is already carried by THREAT_MODEL.md §8. Decision text: docs/spikes/01-face-model.md §7 item 5; consequences: docs/STATUS.md §2.1.",
+    "consequence": "face = null -> face layer UNAVAILABLE -> a GREEN 1:1 verdict is unreachable. Fail-closed, by design (FUSION.md §7).",
+    "evidence": "docs/spikes/01-face-model.md §2.1 and §7",
+    "resourcing_attempt": "2026-09-30, after the decision: one focused attempt to source a 128-d TFLite embedder compatible with the decision. Outcome recorded in docs/spikes/01-face-model.md §7 item 6 — no candidate met all three of (128-d, a TFLite artefact, a licence that permits this use). None was fabricated, approximated or synthesised, and the seam is left clean."
+  },
+
+  "detector_raw_outputs": {
+    "_what_this_is": "NORMATIVE raw output tensors of the real detector for two committed inputs, plus the desktop decode of them. Read raw_outputs/README.md and raw_outputs/raw_outputs.json.",
+    "why": "The face-free fixture can only assert zero detections, and a broken detector also returns zero. That is what let four defects sit in the Android detector unnoticed. raw_outputs/fires is a synthetic image that makes the real model fire, so the sigmoid, the anchor placement, the box, all five keypoints and NMS survivor selection are checked against a number both platforms must produce.",
+    "cases": {
+      "noface": { "input": "eval/fixtures/face/no_face_synthetic_256.png", "decoded": 896, "after_nms": 5, "above_min_score": 0, "top_raw_logit": -1.3417693, "top_score": 0.20721924 },
+      "fires": { "input": "eval/fixtures/face/raw_outputs/fires_synthetic_256.png", "decoded": 896, "after_nms": 3, "above_min_score": 1, "top_raw_logit": 0.9190993, "top_score": 0.71485853 }
+    },
+    "produced_by": ":platform's TfliteBlazeFaceDetector + AnchorDecoder, against the real model, on a bare JVM",
+    "not_produced_by": "app-android. No Android code ran.",
+    "asserted_by": "app-android/src/test/java/dev/kasoti/android/ml/BlazeFaceDesktopParityTest.kt, run by app-android/tools/verify-offline.sh",
+    "is_not": "A parity result. The Android binding is compiled only against hand-written API stubs; it has never met the real SDK or a device."
+  },
+
+  "vendor_performance": {
+    "_warning": "THESE ARE GOOGLE'S NUMBERS FROM THE MODEL CARD, NOT OUR MEASUREMENTS. EVAL.md §1 requires any metric leaving our harness to cite an eval run id, which these cannot. They are recorded so nobody re-derives them, and so AT-14 (bias harm) is a known quantity rather than something a judge discovers.",
+    "recall_by_perceived_gender": { "average": 0.984, "feminine": 0.982, "masculine": 0.985 },
+    "recall_by_skin_tone": { "average": 0.981, "min": 0.947, "max": 1.0, "note": "5.3pp spread across 5 Fitzpatrick-derived groups" },
+    "recall_by_geographic_subregion": { "average": 0.991, "min": 0.925, "max": 1.0, "note": "7.5pp spread across 17 UN geoscheme regions" },
+    "average_precision_by_skin_tone": { "average": 0.997, "min": 0.986, "max": 1.0 },
+    "not_covered_by_vendor": [
+      "age band — EVAL.md §4 requires gender x age-band x lighting; the card reports gender and skin tone and geography but NO age buckets",
+      "per-lighting-bucket numbers (training included varied lighting; no breakdown published)"
+    ],
+    "confidence_limits": [
+      "Evaluation sets are 720 / 800 / 350 images and the card states the three sets are NOT disjoint.",
+      "All samples come from the same source as the training samples — these are in-domain numbers, and our domain (a passport photo on a document, held at arm's length by a stranger) is measurably different.",
+      "The card names 95% credible intervals but the summary reports point estimates only. On a few hundred samples the intervals are wide."
+    ],
+    "stated_scope_caveat": "The model card lists 'any form of surveillance or identity recognition' as explicitly out of scope. Apache-2.0 permits our use, but the authors documented the opposite boundary. Escalated to the lead (spike §6.1, §8)."
+  },
+
+  "desktop_runtime": {
+    "java_api": "ai.djl.tflite:tflite-engine:0.27.0 (the genuine org.tensorflow.lite.* classes)",
+    "native": "ai.djl.tflite:tflite-native-cpu:2.6.2",
+    "license": "Apache-2.0 (both)",
+    "platforms_with_a_native": ["linux-x86_64", "osx-x86_64"],
+    "platforms_without_a_native": ["windows-x86_64", "osx-aarch64"],
+    "without_a_native_means": "review-only, no on-device inference (BUILD.md §4's prescribed response). Not a build failure; the face layer reports UNAVAILABLE.",
+    "_note": "There is NO first-party TFLite JVM artifact: org.tensorflow:tensorflow-lite:2.17.0 on Maven Central is a relocation stub to an AAR, and every earlier version is AAR-only. Full citations in docs/spikes/01-face-model.md §4."
+  }
+}

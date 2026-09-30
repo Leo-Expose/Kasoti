@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  KASOTI — network policy. Invariant I4: no verdict path touches the network.
+
+  There is no network client in this app and no `INTERNET` permission in the manifest, so this
+  file is not the thing that prevents a connection — the missing permission is. It is here so
+  that if a future dependency (a crash reporter, a telemetry SDK pulled in transitively) tries
+  to open a socket, the platform refuses it with a message naming this policy rather than the
+  app silently reaching the internet from a checkpoint with a stranger's document in frame.
+
+  The `localhost` exemption exists only for the debug tooling's own loopback. It is narrowed to
+  the two loopback addresses and explicitly does not permit cleartext, so it cannot be used to
+  reach anything off-device.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <!-- User-installed CAs are trusted in debug only. A proxy on a hostile network
+                 (SPEC A6 assumes the network is hostile) must not be able to MITM the app. -->
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>

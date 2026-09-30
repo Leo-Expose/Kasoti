@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  KASOTI — Android string resources (Hindi). FR-R1; SPEC §3 persona P1 is Hindi-first.
+
+  Every key in `values/strings.xml` has an entry here. The three `err_model_*` strings are
+  deliberately English-only and are annotated as such in the English file: they address the
+  lead who must re-provision, and a half-translated security message is worse than a
+  clearly-scoped English one. Everything an operator reads at a counter is translated.
+-->
+<resources>
+    <string name="app_name">कसोटी</string>
+
+    <string name="verdict_green">पास</string>
+    <string name="verdict_amber">दूसरी जाँच</string>
+    <string name="verdict_red">जारी रखें नहीं</string>
+    <string name="verdict_grey">दोबारा फोटो</string>
+
+    <string name="demo_watermark">डेमो</string>
+    <string name="demo_banner">डेमो मोड — यह वास्तविक जाँच नहीं है</string>
+
+    <string name="cd_verdict_headline">निर्णय: %1$s</string>
+    <string name="cd_capture_preview">दस्तावेज़ का कैमरा दृश्य</string>
+    <string name="cd_crop_overlay">चार खींचने योग्य कोनों सहित दस्तावेज़ क्रॉप आवरण</string>
+    <string name="cd_quality_meter">लाइव कैप्चर गुणवत्ता मीटर</string>
+    <string name="cd_sharpness_meter">मैक्रो पैच तीव्रता मीटर</string>
+    <string name="cd_evidence_thumbnail">निष्कर्ष के लिए साक्ष्य क्रॉप</string>
+    <string name="cd_layer_status">परत %1$s, %2$s</string>
+    <string name="cd_shutter">फोटो लें</string>
+    <string name="cd_next_step">अगला चरण</string>
+    <string name="cd_voice_repeat">निर्णय फिर सुनाएँ</string>
+    <!-- The remaining `err_*` keys are deliberately English-only and are annotated as such in
+         values/strings.xml: they are operational events for the lead who must re-provision or
+         replace a handset, not instructions an officer reads at a counter, and a partially
+         translated security message is worse than a clearly-scoped English one. -->
+    <string name="err_camera">The camera could not start.</string>
+    <string name="err_ocr">Text recognition is unavailable on this device.</string>
+    <string name="err_no_network_needed">KASOTI does not use the network. Everything above ran on this device.</string>
+</resources>

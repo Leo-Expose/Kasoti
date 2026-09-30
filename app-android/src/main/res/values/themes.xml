@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  KASOTI — the platform theme.
+
+  Deliberately the *platform* Material theme, not `Theme.AppCompat`. The app is a single
+  `ComponentActivity` (androidx.activity, already pinned) and renders everything through
+  Compose, so AppCompat would be ~700 KB of theme machinery for a back-arrow and a toolbar
+  this app does not use. R8 would strip most of it, but "R8 would strip it" is a worse reason
+  than "it is not needed".
+
+  `windowBackground` is the page colour, so there is no white flash on cold start — on a sunlit
+  checkpoint a white flash reads as a "clear" verdict for a fraction of a second, which is not
+  a good way to begin a screening.
+-->
+<resources>
+    <style name="Theme.Kasoti" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/page</item>
+        <item name="android:statusBarColor">@color/page</item>
+        <item name="android:navigationBarColor">@color/page</item>
+        <item name="android:colorPrimary">@color/clear_fill</item>
+        <item name="android:colorAccent">@color/clear_fill</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

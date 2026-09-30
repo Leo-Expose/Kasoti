@@ -1,0 +1,33 @@
+# KASOTI — eval/tools pinned requirements (AGENTS.md §2).
+#
+# Python exists in this repository for exactly one reason: to produce artefacts that are
+# trained or generated OFFLINE and then read by Kotlin. It has no runtime role — nothing in
+# `:core`, `:platform`, `:ui` or the apps may import it, and a shipped APK must build with
+# no interpreter present. The gate that enforces the second half is CI's image scan, not
+# this file.
+#
+# Versions are pinned exactly (==, not >=) for two reasons. First, a features vector computed
+# by a different NumPy release is a different vector, and `train_svm.py` embeds the numbers
+# it computed into a model the device ships. Second, a lockfile that resolves differently
+# on the vision engineer's laptop and on the build server is a model nobody can reproduce,
+# which is the whole thing EVAL.md §1 exists to prevent.
+#
+# Install:  python3 -m pip install -r eval/tools/requirements.txt
+# CI does NOT install these: `eval smoke` is pure JVM and must not need Python.
+
+# numpy is the only hard requirement of the corpus + training path
+# (synth_macros.py, extract_features.py, train_svm.py, gen_mrz_corpus.py). It is pinned
+# exactly because a features vector computed by a different NumPy release is a different
+# vector, and train_svm.py embeds the numbers it computed into a model the device ships.
+numpy==2.3.5
+
+# Deliberately NOT used by train_svm.py, which fits its own one-vs-rest linear SVM in NumPy so
+# the exported artefact is a matrix of numbers a reviewer can read and the only hyper-parameter
+# is recorded in the model file. Listed here for the case where somebody wants to cross-check
+# the fit against liblinear; nothing in this repository imports it, and removing this line breaks
+# no script.
+scikit-learn==1.7.2
+
+# Test runner for eval/tools, if it is ever given tests. The gates that CI enforces are JVM
+# tests in :core and :eval — see AGENTS.md §1.
+pytest==8.4.2
