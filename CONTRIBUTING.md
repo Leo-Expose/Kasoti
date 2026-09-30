@@ -1,6 +1,6 @@
 # Contributing to KASOTI
 
-KASOTI is a **solo-maintained** SIH prototype — one person, roughly four weeks. That shapes
+KASOTI is an SIH prototype. That shapes
 everything below: the process is short, the gates are real, and nobody has time
 to read a 40-page contribution guide. **AGENTS.md is binding** — read it before
 you read this. Where this file and AGENTS.md disagree, AGENTS.md wins and this

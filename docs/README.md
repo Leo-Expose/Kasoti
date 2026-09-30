@@ -1,6 +1,6 @@
 # KASOTI (कसौटी) — Offline Border Identity Screening
 ### SIH 2026 · PS-26188 · MHA / SSB · Android + desktop console
-### **Solo-maintained prototype.** One maintainer, no team, no CI, no Android device yet. `docs/STATUS.md` says what is true; this page is the pitch.
+### `docs/STATUS.md` says what is true; this page is the pitch.
 
 > *"Sona chamak se nahi, kasoti se parkha jata hai."*
 > Gold is judged not by its shine, but by the touchstone.
