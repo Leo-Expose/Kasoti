@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import dev.kasoti.android.field.Quad
+import dev.kasoti.i18n.Language
+import dev.kasoti.ui.FieldStrings
 import kotlin.math.roundToInt
 
 /**
@@ -46,6 +48,12 @@ import kotlin.math.roundToInt
  * needs to be *missed* rather than hit accidentally, and because the finger is on glass at an
  * angle while the hand is not in frame. Each has an accessibility description, so a
  * screen-reader user is told which corner they are on rather than hearing "drag handle".
+ *
+ * @param language the app's language toggle, handed down by `MainActivity` and resolved by
+ *   [FieldStrings]. Not `stringResource`: that resolves against the *device* locale, which is a
+ *   different source of truth from the in-app toggle, and wiring the description to it would have
+ *   left a Hindi-speaking officer with a Hindi verdict screen and an English crop overlay — the
+ *   same defect as the English verdict button, moved down one layer.
  */
 @Composable
 fun CameraSurface(
@@ -53,6 +61,7 @@ fun CameraSurface(
     quad: Quad?,
     interactive: Boolean,
     onHandleMoved: (index: Int, x: Float, y: Float) -> Unit,
+    language: Language,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
@@ -71,13 +80,13 @@ fun CameraSurface(
         )
 
         if (interactive && quad != null) {
-            QuadHandleOverlay(quad = quad, onHandleMoved = onHandleMoved)
+            QuadHandleOverlay(quad = quad, onHandleMoved = onHandleMoved, language = language)
         }
     }
 }
 
 @Composable
-private fun QuadHandleOverlay(quad: Quad, onHandleMoved: (Int, x: Float, y: Float) -> Unit) {
+private fun QuadHandleOverlay(quad: Quad, onHandleMoved: (Int, x: Float, y: Float) -> Unit, language: Language) {
     var size by remember { mutableStateOf(IntSize.Zero) }
     var local by remember(quad) { mutableStateOf(quad) }
 
@@ -86,7 +95,9 @@ private fun QuadHandleOverlay(quad: Quad, onHandleMoved: (Int, x: Float, y: Floa
         modifier = Modifier
             .fillMaxSize()
             .testTag("quad-overlay")
-            .semantics { contentDescription = "Document crop with four draggable corner handles" }
+            .semantics {
+                contentDescription = FieldStrings.of(FieldStrings.Key.CD_CROP_OVERLAY, language)
+            }
             .pointerInput(Unit) {
                 detectDragGestures { change, _ ->
                     if (size.width == 0 || size.height == 0) return@detectDragGestures

@@ -37,7 +37,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.kasoti.android.R
 import dev.kasoti.i18n.Language
 import dev.kasoti.ui.AppState
 import dev.kasoti.ui.FieldStrings
@@ -78,6 +77,21 @@ import kotlin.math.roundToInt
  *  3. [Watermark] is drawn whenever `AppState.watermark` is non-null, over everything.
  *  4. No `Finding.message` is ever rendered — only `FindingRow.text`, which came from
  *     `Messages.of(code, language)`.
+ *  5. Every string drawn here — label, button, and TalkBack description alike — is resolved
+ *     through `FieldStrings` with the `Language` the screen was handed. No composable in this
+ *     file declares a `Language` for itself, and none may name one literally.
+ *
+ * ## Obligation 5 is the one that was broken, and it was broken on the worst screen
+ *
+ * `VerdictCard` used to declare `val language = Language.ENGLISH` for itself while every other
+ * screen took a `Language`, so the app-language toggle was defeated on exactly the screen the
+ * officer acts on. Two guards now hold that shut: `VerdictCard` *declares* a `Language`
+ * parameter so it cannot pin itself, and `VerdictActionLanguageTest` in this module scans this
+ * file for a literal `Language.X`, for a bare literal inside `Text(`, and for a bare literal
+ * inside `contentDescription =`. Source scanning is not a substitute for a behavioural test; it
+ * is here because it is the only assertion that can see a string chosen inside a composable,
+ * which cannot be rendered in this project's unit tests (there is no Robolectric and no
+ * `compose-ui-test` dependency, deliberately — see that test's KDoc).
  *
  * ## The metrics are a `companion`, not a second `object` of the same name
  *
@@ -189,15 +203,15 @@ fun KasotiScreen(
                     CaptureCard(state, screen, on)
                 }
                 is ScreenState.Macro -> MacroCardScreen(state.language, screen.stage, on)
-                is ScreenState.Verdict -> VerdictCard(screen.screen, on)
+                is ScreenState.Verdict -> VerdictCard(screen.screen, state.language, on)
                 ScreenState.Idle -> IdleCard(state, on)
                 is ScreenState.Trust -> TrustCardScreen(state.language, screen.card, on)
             }
 
-            state.transientError?.let { message -> ErrorBanner(message, on) }
+            state.transientError?.let { message -> ErrorBanner(message, state.language, on) }
         }
 
-        Watermark(state.watermark)
+        Watermark(state.watermark, state.language)
     }
 }
 
@@ -279,7 +293,7 @@ private fun PermissionCard(language: Language, permission: PermissionState, on: 
                     color = SECONDARY_EDGE,
                 )
                 OutlinedButton(onClick = { on(UiEvent.PermissionSettingsOpened) }, modifier = Modifier.tappable()) {
-                    Text("Open settings", fontSize = 18.sp)
+                    Text(FieldStrings.of(FieldStrings.Key.PERMISSION_SETTINGS, language), fontSize = 18.sp)
                 }
             }
         }
@@ -316,7 +330,13 @@ private fun CaptureCard(state: AppState, screen: ScreenState.Capturing, on: (UiE
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(10.dp)
-                        .semantics { contentDescription = "capture quality ${percent(step.meter.score)}" },
+                        .semantics {
+                            contentDescription = FieldStrings.of(
+                                FieldStrings.Key.CD_QUALITY_METER,
+                                language,
+                                percent(step.meter.score),
+                            )
+                        },
                 )
 
                 state.blockingInstruction()?.let { instruction ->
@@ -340,7 +360,7 @@ private fun CaptureCard(state: AppState, screen: ScreenState.Capturing, on: (UiE
                 }
                 if (screen.progress.currentIndex > 0) {
                     OutlinedButton(onClick = { on(UiEvent.BackStep) }, modifier = Modifier.tappable()) {
-                        Text("Back", fontSize = 18.sp)
+                        Text(FieldStrings.of(FieldStrings.Key.BACK, language), fontSize = 18.sp)
                     }
                 }
             }
@@ -443,11 +463,16 @@ private fun RetakeNotice(instruction: String, causes: List<dev.kasoti.fusion.Fin
  *  5. the layer table, so "RED because the check digit failed" and "RED because five layers ran
  *     and one disagreed" are visibly different conversations;
  *  6. the policy fingerprint, small — it is there for the audit, not for the officer.
+ *
+ * @param language the app's language toggle, resolved by [KasotiScreen] and handed down. It is a
+ *   declared parameter and not something this composable looks up, because the composable used to
+ *   declare `val language = Language.ENGLISH` for itself: an officer who switched the UI to Hindi
+ *   got Hindi on every screen and English again at the moment the verdict arrived, which is the
+ *   one screen they act on. A parameter cannot be forgotten the way a self-declared constant can.
  */
 @Composable
-fun VerdictCard(screen: VerdictScreen, on: (UiEvent) -> Unit) {
+fun VerdictCard(screen: VerdictScreen, language: Language, on: (UiEvent) -> Unit) {
     val colors = palette(screen.tone)
-    val language = Language.ENGLISH
 
     Column(
         modifier = Modifier
@@ -459,7 +484,7 @@ fun VerdictCard(screen: VerdictScreen, on: (UiEvent) -> Unit) {
             .semantics {
                 // One combined description, not a tree of nodes: a screen-reader user needs
                 // "verdict DO NOT CLEAR" as one utterance, not the word DO, then NOT, then CLEAR.
-                contentDescription = "Verdict ${screen.headline}"
+                contentDescription = FieldStrings.of(FieldStrings.Key.CD_VERDICT_HEADLINE, language, screen.headline)
                 liveRegion = LiveRegionMode.Assertive
             },
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -478,7 +503,7 @@ fun VerdictCard(screen: VerdictScreen, on: (UiEvent) -> Unit) {
             // photograph; the banner cannot, and this is the one place a wrong impression is
             // worth shouting about.
             Text(
-                text = DEMO_BANNER,
+                text = FieldStrings.of(FieldStrings.Key.DEMO_BANNER, language),
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = STOP_EDGE,
@@ -504,7 +529,7 @@ fun VerdictCard(screen: VerdictScreen, on: (UiEvent) -> Unit) {
 
         if (screen.carriedOver.isNotEmpty()) {
             Text(
-                text = "Already seen on the previous capture:",
+                text = FieldStrings.of(FieldStrings.Key.CARRIED_OVER, language),
                 fontWeight = FontWeight.Medium,
                 fontSize = 17.sp,
             )
@@ -513,17 +538,16 @@ fun VerdictCard(screen: VerdictScreen, on: (UiEvent) -> Unit) {
             }
         }
 
-        if (screen.layers.isNotEmpty()) LayerTable(screen)
+        if (screen.layers.isNotEmpty()) LayerTable(screen, language)
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            val label = when {
-                screen.isRetake -> FieldStrings.of(FieldStrings.Key.ACTION_RETAKE, language)
-                screen.supervisorRequired -> FieldStrings.of(FieldStrings.Key.ACTION_SUPERVISOR, language)
-                else -> FieldStrings.of(FieldStrings.Key.ACTION_NEXT, language)
-            }
+            // `actionLabel` is a pure function on `:ui` data, not a `when` here, because the
+            // retake-vs-supervisor ordering is policy and a renderer that re-decided it was how
+            // two renderers came to disagree. See its KDoc for why it is not inlined below.
+            val label = screen.actionLabel(language)
             Button(
                 onClick = { on(if (screen.isRetake) UiEvent.Shutter else UiEvent.NextPerson) },
                 modifier = Modifier.weight(1f).tappable(),
@@ -559,9 +583,13 @@ private fun FindingLine(severity: String, text: String, evidenceRef: String, col
 }
 
 @Composable
-private fun LayerTable(screen: VerdictScreen) {
+private fun LayerTable(screen: VerdictScreen, language: Language) {
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Text(text = "Checks", fontWeight = FontWeight.Medium, fontSize = 17.sp)
+        Text(
+            text = FieldStrings.of(FieldStrings.Key.CHECKS_TITLE, language),
+            fontWeight = FontWeight.Medium,
+            fontSize = 17.sp,
+        )
         for (layer in screen.layers) {
             Text(
                 text = buildString {
@@ -574,7 +602,14 @@ private fun LayerTable(screen: VerdictScreen) {
                 fontSize = 14.sp,
                 color = MUTED,
                 modifier = Modifier.semantics {
-                    contentDescription = "layer ${layer.layer.name.lowercase()}, ${layer.ref}"
+                    // The visible line is abbreviated to fit; the spoken one is not, because a
+                    // screen-reader user cannot see the abbreviation they are being read past.
+                    contentDescription = FieldStrings.of(
+                        FieldStrings.Key.CD_LAYER_STATUS,
+                        language,
+                        layer.layer.name.lowercase(),
+                        layer.ref,
+                    )
                 },
             )
         }
@@ -595,10 +630,12 @@ private fun LayerTable(screen: VerdictScreen) {
  * unmissable in a photograph.
  */
 @Composable
-private fun Watermark(text: String?) {
+private fun Watermark(text: String?, language: Language) {
     if (text == null) return
     Box(
-        modifier = Modifier.fillMaxSize().semantics { contentDescription = "Demo mode" },
+        modifier = Modifier
+            .fillMaxSize()
+            .semantics { contentDescription = FieldStrings.of(FieldStrings.Key.CD_DEMO_MODE, language) },
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -630,8 +667,16 @@ private fun MacroCardScreen(language: Language, stage: dev.kasoti.ui.MacroCard, 
                 fontSize = 18.sp,
             )
 
-            SharpnessBar(FieldStrings.of(FieldStrings.Key.MACRO_PHOTO_ZONE, language), stage.photoZoneSharpness)
-            SharpnessBar(FieldStrings.of(FieldStrings.Key.MACRO_TEXT_ZONE, language), stage.textZoneSharpness)
+            SharpnessBar(
+                label = FieldStrings.of(FieldStrings.Key.MACRO_PHOTO_ZONE, language),
+                value = stage.photoZoneSharpness,
+                language = language,
+            )
+            SharpnessBar(
+                label = FieldStrings.of(FieldStrings.Key.MACRO_TEXT_ZONE, language),
+                value = stage.textZoneSharpness,
+                language = language,
+            )
 
             Text(
                 text = if (stage.focusLocked) {
@@ -645,7 +690,13 @@ private fun MacroCardScreen(language: Language, stage: dev.kasoti.ui.MacroCard, 
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(onClick = { on(UiEvent.SetClipUsed(!stage.clipUsed)) }, modifier = Modifier.tappable()) {
-                    Text(if (stage.clipUsed) "Clip ON" else "Clip OFF", fontSize = 18.sp)
+                    Text(
+                        FieldStrings.of(
+                            if (stage.clipUsed) FieldStrings.Key.CLIP_ON else FieldStrings.Key.CLIP_OFF,
+                            language,
+                        ),
+                        fontSize = 18.sp,
+                    )
                 }
                 Button(
                     onClick = { on(UiEvent.Shutter) },
@@ -662,16 +713,29 @@ private fun MacroCardScreen(language: Language, stage: dev.kasoti.ui.MacroCard, 
     }
 }
 
+/**
+ * The macro screen's per-patch sharpness bar.
+ *
+ * [language] rather than a self-declared constant, for the same reason [VerdictCard] takes one:
+ * the "Sharpness" prefix and the spoken description were English on both patches while the zone
+ * name beside them was already localised, so a Hindi operator read "Photo zone" under an English
+ * heading and heard an English percentage-free description from TalkBack.
+ */
 @Composable
-private fun SharpnessBar(label: String, value: Float) {
+private fun SharpnessBar(label: String, value: Float, language: Language) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        Text(text = "${FieldStrings.of(FieldStrings.Key.MACRO_SHARPNESS, Language.ENGLISH)} · $label", fontSize = 14.sp)
+        Text(
+            text = "${FieldStrings.of(FieldStrings.Key.MACRO_SHARPNESS, language)} · $label",
+            fontSize = 14.sp,
+        )
         LinearProgressIndicator(
             progress = { value.coerceIn(0f, 1f) },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(10.dp)
-                .semantics { contentDescription = "sharpness $label" },
+                .semantics {
+                    contentDescription = FieldStrings.of(FieldStrings.Key.CD_SHARPNESS_METER, language, label)
+                },
         )
     }
 }
@@ -688,8 +752,13 @@ private fun IdleCard(state: AppState, on: (UiEvent) -> Unit) {
             // The network claim, on the idle screen, before anything has happened. It is the
             // single most-asked question about a device that photographs identity documents, and
             // answering it with a sentence on the screen costs nothing.
+            //
+            // Present tense and "here" are load-bearing, not stylistic: this is the only screen
+            // that shows it, and at this point nothing has been captured, so the resource's
+            // past-tense "Everything above ran on this device" would be false here. See the KDoc
+            // on `FieldStrings.NO_NETWORK_CLAIM`.
             Text(
-                text = NO_NETWORK_CLAIM,
+                text = FieldStrings.of(FieldStrings.Key.NO_NETWORK_CLAIM, language),
                 fontSize = 17.sp,
                 color = CLEAR_EDGE,
                 textAlign = TextAlign.Center,
@@ -723,7 +792,11 @@ private fun TrustCardScreen(language: Language, card: TrustCard, on: (UiEvent) -
                 fontWeight = FontWeight.Bold,
             )
             if (card.enrolled) {
-                Text(text = "re-verify in ${card.daysUntilReverify} days", color = MUTED, fontSize = 16.sp)
+                Text(
+                    text = FieldStrings.of(FieldStrings.Key.TRUST_REVERIFY_IN, language, card.daysUntilReverify),
+                    color = MUTED,
+                    fontSize = 16.sp,
+                )
             }
             if (card.recheckScheduled) {
                 Text(
@@ -744,8 +817,17 @@ private fun TrustCardScreen(language: Language, card: TrustCard, on: (UiEvent) -
     }
 }
 
+/**
+ * The transient-error strip.
+ *
+ * [message] is already resolved by whoever set `AppState.transientError` — from
+ * `Messages.of(code, language)` or from `FieldStrings` — so it is rendered here verbatim rather
+ * than re-resolved, and this composable is responsible only for its own one string. That is why
+ * [language] is a parameter: a banner that says "OK" in English under a Hindi error is the same
+ * defect class as an English verdict button.
+ */
 @Composable
-private fun ErrorBanner(message: String, on: (UiEvent) -> Unit) {
+private fun ErrorBanner(message: String, language: Language, on: (UiEvent) -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.padding(12.dp).fillMaxWidth(),
@@ -754,7 +836,7 @@ private fun ErrorBanner(message: String, on: (UiEvent) -> Unit) {
         ) {
             Text(text = message, color = SECONDARY_EDGE, fontSize = 16.sp, modifier = Modifier.weight(1f))
             OutlinedButton(onClick = { on(UiEvent.DismissError) }, modifier = Modifier.tappable()) {
-                Text("OK", fontSize = 16.sp)
+                Text(FieldStrings.of(FieldStrings.Key.ERROR_DISMISS, language), fontSize = 16.sp)
             }
         }
     }
@@ -812,8 +894,11 @@ private val SECONDARY_EDGE = Color(0xFF4A3600)
 private val SURFACE_CLEAR = Color(0xFFE8F5E9)
 private val CLEAR_EDGE = Color(0xFF0D3B10)
 
-private const val DEMO_BANNER = "DEMO MODE — not a real screening"
-private const val NO_NETWORK_CLAIM = "KASOTI does not use the network. Everything here runs on this device."
+// No user-facing string lives here any more. The renderer's two private `const`s — the demo
+// banner and the network claim — duplicated bilingual keys that already existed in
+// `FieldStrings`, which meant English by construction on a screen an officer reads and no test
+// could see. Anything drawn above is resolved through the catalogue with the `Language` the
+// screen was handed; `VerdictActionLanguageTest` scans this file to keep it that way.
 
 /**
  * The PIN placeholder the trust card sends.

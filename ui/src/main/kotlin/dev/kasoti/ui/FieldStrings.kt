@@ -41,6 +41,7 @@ object FieldStrings {
         Key.QUALITY_HOLD to "Hold steady",
         Key.QUALITY_GOOD to "Good",
         Key.QUALITY_CAPTURE to "Capture",
+        Key.BACK to "Back",
 
         Key.MACRO_PHOTO_ZONE to "Photo zone",
         Key.MACRO_TEXT_ZONE to "Text zone",
@@ -48,6 +49,8 @@ object FieldStrings {
         Key.MACRO_USE_CLIP to "Use the clip shroud for both patches",
         Key.MACRO_FOCUS_LOCKED to "Focus locked",
         Key.MACRO_FOCUS_TAP to "Tap to lock focus",
+        Key.CLIP_ON to "Clip ON",
+        Key.CLIP_OFF to "Clip OFF",
 
         Key.QUAD_AUTO to "Auto",
         Key.QUAD_MANUAL to "Adjust corners",
@@ -59,6 +62,9 @@ object FieldStrings {
         Key.VERDICT_RED to "DO NOT CLEAR",
         Key.VERDICT_GREY to "RETAKE",
 
+        Key.CARRIED_OVER to "Already seen on the previous capture:",
+        Key.CHECKS_TITLE to "Checks",
+
         Key.ACTION_NEXT to "Next person",
         Key.ACTION_RETAKE to "Retake",
         Key.ACTION_DETAILS to "Why?",
@@ -69,20 +75,45 @@ object FieldStrings {
         Key.DEMO_BANNER to "DEMO MODE — not a real screening",
         Key.DEMO_LOAD to "Load demo case",
         Key.DEMO_RESET to "Reset demo",
+        Key.DEMO_MODE_OFF to "Demo mode is off. Open the idle card and load a demo.",
 
         Key.TRUST_ENROL to "Enrol in trust lane",
         Key.TRUST_PIN to "Supervisor PIN",
         Key.TRUST_FAST to "Trust lane",
         Key.TRUST_REVOKE to "Revoke",
         Key.TRUST_RECHECK to "Random re-check",
+        Key.TRUST_REVERIFY_IN to "re-verify in %1\$d days",
 
         Key.PERMISSION_TITLE to "Camera and storage access",
         Key.PERMISSION_BODY to "KASOTI needs the camera. It never uses the network.",
         Key.PERMISSION_GRANT to "Grant",
         Key.PERMISSION_DENIED to "Screening needs the camera. No camera, no screening.",
+        Key.PERMISSION_SETTINGS to "Open settings",
+
+        // Present tense and "here", deliberately. The Android renderer used to carry a private
+        // const reading "…Everything here runs on this device." while the `err_no_network_needed`
+        // resource read "…Everything above ran on this device.", and the two had drifted apart.
+        // THIS wording is the one kept, because the idle card is the only place either sentence is
+        // shown and nothing has been captured yet at that point: there is nothing "above" it and
+        // nothing that has "run", so the resource's past tense is false on the one screen that
+        // renders it. The resource is a separate, currently-unread string and was left alone.
+        Key.NO_NETWORK_CLAIM to "KASOTI does not use the network. Everything here runs on this device.",
+
+        Key.ERROR_DISMISS to "OK",
 
         Key.NO_EVIDENCE_TITLE to "Nothing to look at",
         Key.NO_EVIDENCE_BODY to "This capture could not be read. It is not a result about the document.",
+
+        // Accessibility descriptions. These are *heard*, not read, and the person hearing them
+        // cannot see the control they belong to — so each one has to stand alone. The `cd_*`
+        // resources in `app-android` cover the same ground for the pre-Compose system UI; the two
+        // are bound together by `AccessibilityStringParityTest`, not by hand.
+        Key.CD_CROP_OVERLAY to "Document crop overlay with four draggable corner handles",
+        Key.CD_VERDICT_HEADLINE to "Verdict: %1\$s",
+        Key.CD_LAYER_STATUS to "Layer %1\$s, %2\$s",
+        Key.CD_QUALITY_METER to "Capture quality %1\$d%%",
+        Key.CD_SHARPNESS_METER to "Sharpness: %1\$s",
+        Key.CD_DEMO_MODE to "Demo mode",
     )
 
     private val hi: Map<Key, String> = mapOf(
@@ -102,6 +133,7 @@ object FieldStrings {
         Key.QUALITY_HOLD to "स्थिर रखें",
         Key.QUALITY_GOOD to "ठीक है",
         Key.QUALITY_CAPTURE to "फोटो लें",
+        Key.BACK to "पीछे",
 
         Key.MACRO_PHOTO_ZONE to "चित्र क्षेत्र",
         Key.MACRO_TEXT_ZONE to "टेक्स्ट क्षेत्र",
@@ -109,6 +141,8 @@ object FieldStrings {
         Key.MACRO_USE_CLIP to "दोनों पैच के लिए क्लिप शेल्टर लगाएँ",
         Key.MACRO_FOCUS_LOCKED to "फोकस लॉक है",
         Key.MACRO_FOCUS_TAP to "फोकस लॉक करने के लिए टैप करें",
+        Key.CLIP_ON to "क्लिप चालू",
+        Key.CLIP_OFF to "क्लिप बंद",
 
         Key.QUAD_AUTO to "स्वतः",
         Key.QUAD_MANUAL to "कोने समायोजित करें",
@@ -120,6 +154,9 @@ object FieldStrings {
         Key.VERDICT_RED to "जारी रखें नहीं",
         Key.VERDICT_GREY to "दोबारा फोटो",
 
+        Key.CARRIED_OVER to "पिछली तस्वीर में यह पहले से देखा गया था:",
+        Key.CHECKS_TITLE to "जाँचें",
+
         Key.ACTION_NEXT to "अगला व्यक्ति",
         Key.ACTION_RETAKE to "दोबारा फोटो",
         Key.ACTION_DETAILS to "कारण?",
@@ -130,20 +167,34 @@ object FieldStrings {
         Key.DEMO_BANNER to "डेमो मोड — यह वास्तविक जाँच नहीं है",
         Key.DEMO_LOAD to "डेमो केस लोड करें",
         Key.DEMO_RESET to "डेमो रीसेट",
+        Key.DEMO_MODE_OFF to "डेमो मोड बंद है। निष्क्रिय कार्ड खोलें और डेमो केस लोड करें।",
 
         Key.TRUST_ENROL to "विश्वसनीय लेन में दर्ज करें",
         Key.TRUST_PIN to "पर्यवेक्षक पिन",
         Key.TRUST_FAST to "विश्वसनीय लेन",
         Key.TRUST_REVOKE to "रद्द करें",
         Key.TRUST_RECHECK to "यादृच्छिक पुनः-जाँच",
+        Key.TRUST_REVERIFY_IN to "%1\$d दिनों में पुनः-सत्यापन",
 
         Key.PERMISSION_TITLE to "कैमरा और संग्रहण अनुमति",
         Key.PERMISSION_BODY to "कसोटी को कैमरा चाहिए। यह कभी नेटवर्क का उपयोग नहीं करती।",
         Key.PERMISSION_GRANT to "अनुमति दें",
         Key.PERMISSION_DENIED to "जाँच के लिए कैमरा आवश्यक है। कैमरा नहीं, जाँच नहीं।",
+        Key.PERMISSION_SETTINGS to "सेटिंग खोलें",
+
+        Key.NO_NETWORK_CLAIM to "कसोटी नेटवर्क का उपयोग नहीं करती। यह सब इसी डिवाइस पर चलता है।",
+
+        Key.ERROR_DISMISS to "समाप्त करें",
 
         Key.NO_EVIDENCE_TITLE to "देखने को कुछ नहीं",
         Key.NO_EVIDENCE_BODY to "इस तस्वीर को पढ़ा नहीं जा सका। यह दस्तावेज़ के बारे में कोई नतीजा नहीं है।",
+
+        Key.CD_CROP_OVERLAY to "चार खींचने योग्य कोनों सहित दस्तावेज़ क्रॉप आवरण",
+        Key.CD_VERDICT_HEADLINE to "निर्णय: %1\$s",
+        Key.CD_LAYER_STATUS to "परत %1\$s, %2\$s",
+        Key.CD_QUALITY_METER to "कैप्चर गुणवत्ता %1\$d%%",
+        Key.CD_SHARPNESS_METER to "तीव्रता: %1\$s",
+        Key.CD_DEMO_MODE to "डेमो मोड",
     )
 
     /**
@@ -168,15 +219,20 @@ object FieldStrings {
         APP_NAME, LANGUAGE,
         STEP_OF, STEP_DOCUMENT, STEP_DOCUMENT_HINT, STEP_MRZ, STEP_MRZ_HINT,
         STEP_MACRO, STEP_MACRO_HINT, STEP_FACE, STEP_FACE_HINT,
-        QUALITY_HOLD, QUALITY_GOOD, QUALITY_CAPTURE,
+        QUALITY_HOLD, QUALITY_GOOD, QUALITY_CAPTURE, BACK,
         MACRO_PHOTO_ZONE, MACRO_TEXT_ZONE, MACRO_SHARPNESS, MACRO_USE_CLIP,
-        MACRO_FOCUS_LOCKED, MACRO_FOCUS_TAP,
+        MACRO_FOCUS_LOCKED, MACRO_FOCUS_TAP, CLIP_ON, CLIP_OFF,
         QUAD_AUTO, QUAD_MANUAL, QUAD_ACCEPT, QUAD_RECAPTURE,
         VERDICT_GREEN, VERDICT_AMBER, VERDICT_RED, VERDICT_GREY,
+        CARRIED_OVER, CHECKS_TITLE,
         ACTION_NEXT, ACTION_RETAKE, ACTION_DETAILS, ACTION_SUPERVISOR, ACTION_REPEAT_VOICE,
-        DEMO_WATERMARK, DEMO_BANNER, DEMO_LOAD, DEMO_RESET,
-        TRUST_ENROL, TRUST_PIN, TRUST_FAST, TRUST_REVOKE, TRUST_RECHECK,
-        PERMISSION_TITLE, PERMISSION_BODY, PERMISSION_GRANT, PERMISSION_DENIED,
+        DEMO_WATERMARK, DEMO_BANNER, DEMO_LOAD, DEMO_RESET, DEMO_MODE_OFF,
+        TRUST_ENROL, TRUST_PIN, TRUST_FAST, TRUST_REVOKE, TRUST_RECHECK, TRUST_REVERIFY_IN,
+        PERMISSION_TITLE, PERMISSION_BODY, PERMISSION_GRANT, PERMISSION_DENIED, PERMISSION_SETTINGS,
+        NO_NETWORK_CLAIM,
+        ERROR_DISMISS,
         NO_EVIDENCE_TITLE, NO_EVIDENCE_BODY,
+        CD_CROP_OVERLAY, CD_VERDICT_HEADLINE, CD_LAYER_STATUS,
+        CD_QUALITY_METER, CD_SHARPNESS_METER, CD_DEMO_MODE,
     }
 }

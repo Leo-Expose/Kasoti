@@ -45,6 +45,7 @@ import dev.kasoti.i18n.Messages
 import dev.kasoti.mrz.MrzResult
 import dev.kasoti.ui.AppState
 import dev.kasoti.ui.CaptureProgressBuilder
+import dev.kasoti.ui.FieldStrings
 import dev.kasoti.ui.FlowController
 import dev.kasoti.ui.PermissionState
 import dev.kasoti.ui.QualityMeter
@@ -143,6 +144,10 @@ class MainActivity : ComponentActivity() {
                             onEvent(UiEvent.MoveQuadHandle(index, x, y))
                             capture.quad = capture.quad?.withCorner(index, x, y)
                         },
+                        // The toggle, not the device locale: the overlay's accessibility
+                        // description resolves through `FieldStrings`, so it has to be keyed by
+                        // the same `Language` as everything the officer reads.
+                        language = state.language,
                     )
                 },
             )
@@ -485,8 +490,12 @@ class MainActivity : ComponentActivity() {
             ?: return
         val demoCase = graph.demoSession.load(scenario.id) ?: run {
             // Demo mode is off, or the id is unknown. The recovery line is honest rather than
-            // silently returning to the capture screen (DEMO.md §5).
-            state = state.copy(transientError = "Demo mode is off. Open the idle card and load a demo.")
+            // silently returning to the capture screen (DEMO.md §5). Resolved through
+            // `FieldStrings` for the same reason every other string on screen is: a hardcoded
+            // literal here was an English-only banner on a Hindi device (AGENTS.md §2).
+            state = state.copy(
+                transientError = FieldStrings.of(FieldStrings.Key.DEMO_MODE_OFF, state.language),
+            )
             return
         }
         val outcome = graph.screening.runDemo(demoCase)

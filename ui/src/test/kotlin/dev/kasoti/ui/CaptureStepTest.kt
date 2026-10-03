@@ -64,6 +64,80 @@ class FieldStringsTest {
         val collisions = furniture.intersect(coreStrings)
         assertEquals(emptySet(), collisions, "UI chrome must not restate a :core finding string")
     }
+
+    /**
+     * The keys added when `app-android`'s Compose renderer stopped carrying bare literals.
+     *
+     * `FieldStringsTest` above already enforces completeness for *every* key generically, so what
+     * this adds is the part a generic check cannot see: that each of these was given a real
+     * Hindi translation and not merely copied across, and that the two that interpolate a number
+     * still line their placeholders up. A key pasted in with the English text passes the
+     * completeness test and fails this one.
+     */
+    @Test
+    fun `the keys that replaced hardcoded renderer literals are translated, not copied`() {
+        val added = listOf(
+            FieldStrings.Key.BACK,
+            FieldStrings.Key.PERMISSION_SETTINGS,
+            FieldStrings.Key.CARRIED_OVER,
+            FieldStrings.Key.CHECKS_TITLE,
+            FieldStrings.Key.CLIP_ON,
+            FieldStrings.Key.CLIP_OFF,
+            FieldStrings.Key.TRUST_REVERIFY_IN,
+            FieldStrings.Key.NO_NETWORK_CLAIM,
+            FieldStrings.Key.DEMO_MODE_OFF,
+            FieldStrings.Key.ERROR_DISMISS,
+            FieldStrings.Key.CD_CROP_OVERLAY,
+            FieldStrings.Key.CD_VERDICT_HEADLINE,
+            FieldStrings.Key.CD_LAYER_STATUS,
+            FieldStrings.Key.CD_QUALITY_METER,
+            FieldStrings.Key.CD_SHARPNESS_METER,
+            FieldStrings.Key.CD_DEMO_MODE,
+        )
+        for (key in added) {
+            assertTrue(key !in FieldStrings.missingEnglish(), "$key has no English string")
+            assertTrue(key !in FieldStrings.missingHindi(), "$key has no Hindi string")
+            assertTrue(
+                FieldStrings.of(key, Language.ENGLISH) != FieldStrings.of(key, Language.HINDI),
+                "$key renders the same in both languages — the Hindi was copied from the English",
+            )
+        }
+    }
+
+    @Test
+    fun `the interpolated renderer keys substitute in both languages`() {
+        assertEquals("re-verify in 12 days", FieldStrings.of(FieldStrings.Key.TRUST_REVERIFY_IN, Language.ENGLISH, 12))
+        assertEquals("12 दिनों में पुनः-सत्यापन", FieldStrings.of(FieldStrings.Key.TRUST_REVERIFY_IN, Language.HINDI, 12))
+        assertEquals("Verdict: DO NOT CLEAR", FieldStrings.of(FieldStrings.Key.CD_VERDICT_HEADLINE, Language.ENGLISH, "DO NOT CLEAR"))
+        assertEquals("निर्णय: जारी रखें नहीं", FieldStrings.of(FieldStrings.Key.CD_VERDICT_HEADLINE, Language.HINDI, "जारी रखें नहीं"))
+        assertEquals("Layer mrz, MRZ/A/B/C", FieldStrings.of(FieldStrings.Key.CD_LAYER_STATUS, Language.ENGLISH, "mrz", "MRZ/A/B/C"))
+        assertEquals("परत mrz, MRZ/A/B/C", FieldStrings.of(FieldStrings.Key.CD_LAYER_STATUS, Language.HINDI, "mrz", "MRZ/A/B/C"))
+        assertEquals("Capture quality 42%", FieldStrings.of(FieldStrings.Key.CD_QUALITY_METER, Language.ENGLISH, 42))
+        assertEquals("कैप्चर गुणवत्ता 42%", FieldStrings.of(FieldStrings.Key.CD_QUALITY_METER, Language.HINDI, 42))
+        assertEquals("Sharpness: Photo zone", FieldStrings.of(FieldStrings.Key.CD_SHARPNESS_METER, Language.ENGLISH, "Photo zone"))
+        assertEquals("तीव्रता: चित्र क्षेत्र", FieldStrings.of(FieldStrings.Key.CD_SHARPNESS_METER, Language.HINDI, "चित्र क्षेत्र"))
+    }
+
+    /**
+     * The idle card's network claim, and the drift it settles.
+     *
+     * The Android renderer used to hold a private const reading "Everything here runs on this
+     * device" while the `err_no_network_needed` resource read "Everything above ran on this
+     * device". The const's wording is the one that survives, because the idle card is the only
+     * place either sentence is rendered and at that point nothing has been captured: there is
+     * nothing above the claim and nothing that has run. This test exists so the resolution cannot
+     * be quietly re-drifted, and so nobody "fixes" it towards the past tense by copying the
+     * resource.
+     */
+    @Test
+    fun `the network claim keeps the wording that is true on the screen that shows it`() {
+        val english = FieldStrings.of(FieldStrings.Key.NO_NETWORK_CLAIM, Language.ENGLISH)
+        assertTrue(english.contains("Everything here runs on this device"), "got: $english")
+        assertTrue(
+            !english.contains("Everything above ran"),
+            "the past-tense resource wording is false on the idle card — nothing has run yet",
+        )
+    }
 }
 
 class CaptureStepTest {

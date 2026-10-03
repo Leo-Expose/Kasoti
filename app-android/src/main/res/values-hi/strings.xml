@@ -28,10 +28,20 @@
     <string name="cd_shutter">फोटो लें</string>
     <string name="cd_next_step">अगला चरण</string>
     <string name="cd_voice_repeat">निर्णय फिर सुनाएँ</string>
-    <!-- The remaining `err_*` keys are deliberately English-only and are annotated as such in
+    <!-- All six `err_*` keys are deliberately English-only and are annotated as such in
          values/strings.xml: they are operational events for the lead who must re-provision or
          replace a handset, not instructions an officer reads at a counter, and a partially
-         translated security message is worse than a clearly-scoped English one. -->
+         translated security message is worse than a clearly-scoped English one.
+
+         They appear here verbatim rather than being left out. Lint's MissingTranslation is right
+         that a `values` key with no `values-hi` entry is an English string shown to a Hindi
+         speaker; the way this file answers that is to carry the English deliberately and say so
+         in a comment, not to omit the key and let the platform resolve it invisibly. Omitting the
+         three `err_model_*` keys was how this file ended up red: the intent above was real, the
+         three entries were simply never added. -->
+    <string name="err_model_hash">Model files failed their hash check. Refusing to screen.</string>
+    <string name="err_model_missing">Model files are missing. Refusing to screen.</string>
+    <string name="err_model_truncated">A model file is truncated. Refusing to screen.</string>
     <string name="err_camera">The camera could not start.</string>
     <string name="err_ocr">Text recognition is unavailable on this device.</string>
     <string name="err_no_network_needed">KASOTI does not use the network. Everything above ran on this device.</string>

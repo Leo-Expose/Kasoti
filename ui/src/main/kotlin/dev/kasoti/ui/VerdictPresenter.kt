@@ -71,6 +71,41 @@ data class VerdictScreen(
 
     /** True when this screen needs a thumbnail to make sense. Used to size the crop capture. */
     val wantsEvidence: Boolean get() = tone.isAccusatory || findings.any { it.code == FindingCode.R_PROC_02 }
+
+    /**
+     * The label on the screen's one action button.
+     *
+     * ## Why this lives here and not in the renderer
+     *
+     * This is the button the officer presses *on the verdict screen*, so it is the string whose
+     * language matters most in the whole app. It used to be a `when` inside
+     * `VerdictCard`, an `@Composable`, and `VerdictCard` had no language parameter at all — it
+     * declared `val language = Language.ENGLISH` for itself. The result was that switching the
+     * UI to Hindi changed every other screen and left the verdict screen, and only the verdict
+     * screen, in English.
+     *
+     * Two things make that class of defect invisible to a normal test:
+     *
+     *  1. a composable cannot be rendered in this project's unit tests — there is no Robolectric
+     *     and no `ui-test` dependency, deliberately, and adding one needs the ADR AGENTS.md §5
+     *     requires. So a string chosen *inside* a composable is a string nothing can assert on;
+     *  2. `isRetake` and `supervisorRequired` are the two branches that actually differ, and a
+     *     test that only exercised the default branch would pass against English-only code.
+     *
+     * So the choice is a pure function on data, in the same module as [isRetake] and beside
+     * [FieldStrings], and `VerdictActionLanguageTest` in `:app-android` holds the renderer to
+     * it.
+     *
+     * The order is [isRetake] first and it is load-bearing: a GREY whose findings happen to set
+     * `supervisorRequired` must still say "retake", because the operator's next action on a GREY
+     * is another photograph and telling them to phone a supervisor instead is the wrong
+     * instruction at the counter.
+     */
+    fun actionLabel(language: Language): String = when {
+        isRetake -> FieldStrings.of(FieldStrings.Key.ACTION_RETAKE, language)
+        supervisorRequired -> FieldStrings.of(FieldStrings.Key.ACTION_SUPERVISOR, language)
+        else -> FieldStrings.of(FieldStrings.Key.ACTION_NEXT, language)
+    }
 }
 
 /**

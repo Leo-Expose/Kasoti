@@ -80,28 +80,62 @@ jobs:
       # in this workflow at all. `:ui:test` is now unconditional, for the same reason
       # `:core:jvmTest` is.
       # ---------------------------------------------------------------------
+      # WHY THIS STEP IS NOT A GATE, AND WHY IT STILL CHECKS SOMETHING.
+      #
+      # Detection cannot fail the build — a runner legitimately may have no SDK, and
+      # making that red would be a permanently red job for a fact about the machine.
+      # What it MUST NOT do is pass while leaving the reader unable to tell whether the
+      # shipping artefact was gated. Two things went wrong before this was checked, and
+      # both were invisible from outside:
+      #
+      #   1. It accepted any *existing directory*. An SDK directory without
+      #      platforms/android-35 (compileSdk 35, app-android/build.gradle.kts:168) is
+      #      not an SDK this project can build against, and it would have been reported
+      #      here as found — deferring the failure to an unrelated-looking Gradle error
+      #      minutes later. So the platform the build actually needs is now required.
+      #   2. Nothing downstream noticed when it said "not found". The Gate summary used
+      #      to write a hard-coded row that said the size gate was "run" whenever an SDK
+      #      existed and a fixed sentence about it when one did not; the bundle-manifest
+      #      row did not exist at all. That is the shape of bug this file's own header
+      #      warns about, and it is why the summary below now derives every row from a
+      #      step's real outcome.
+      #
+      # MEASURED, not assumed: on ubuntu-latest (run 37112766189) ANDROID_HOME is
+      # /usr/local/lib/android/sdk, so :app-android WAS in the build and the bundle and
+      # size gates DID run and measure (a 36.97 MB .aab, 14.60 MB worst-case slice). The
+      # SDK-free path below is the fallback, not the normal case — do not read a step
+      # named "SDK-free Android proof" being skipped as the Android gates being skipped.
       - name: Detect Android SDK
         id: sdk
         run: |
           set -euo pipefail
           SDK=""
           for candidate in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" \
-                           "${RUNNER_TEMP}/android-sdk"; do
+                           "${RUNNER_TEMP:-/tmp}/android-sdk"; do
             if [ -n "$candidate" ] && [ -d "$candidate" ]; then SDK="$candidate"; break; fi
           done
+          # compileSdk 35 (app-android/build.gradle.kts). build-tools 35.0.0 is what
+          # AGP 8.9.2 resolves for it and is named in AGENTS.md §1; requiring the
+          # platform is the load-bearing half, because that is the one whose absence
+          # produces a confusing failure rather than an immediate one.
+          if [ -n "$SDK" ] && [ ! -d "$SDK/platforms/android-35" ]; then
+            echo "::warning title=Android SDK unusable::$SDK exists but has no platforms/android-35 (compileSdk 35). Treating the runner as SDK-free: the Android build, the .aab and the 35 MB size gate will NOT run."
+            SDK=""
+          fi
           if [ -z "$SDK" ]; then
-            echo "::notice title=Android modules skipped::No Android SDK on this runner."
-            echo "::notice::settings.gradle.kts will NOT include :app-android, so the Android"
-            echo "::notice::build, the APK-size step and the bundle-manifest step are SKIPPED,"
-            echo "::notice::not passed. :ui is NOT affected — it is always in the build."
+            # A warning, not a notice. The gates below are SKIPPED, not passed, and the
+            # difference has to be visible in the run list without opening the log.
+            echo "::warning title=Android modules NOT gated::No usable Android SDK on this runner (checked \$ANDROID_HOME, \$ANDROID_SDK_ROOT, \$RUNNER_TEMP/android-sdk for platforms/android-35). settings.gradle.kts will NOT include :app-android, so the Android build, the .aab, the 35 MB per-device-slice gate and the bundle-manifest gate are SKIPPED — not passed. :ui is NOT affected: it is always in the build."
             echo "::notice::app-android/tools/verify-offline.sh covers what can be covered"
             echo "::notice::without an SDK; see the 'SDK-free Android proof' step."
             echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "reason=no-usable-android-sdk" >> "$GITHUB_OUTPUT"
           else
             echo "sdk.dir=$SDK" > local.properties
             echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
             echo "enabled=true"  >> "$GITHUB_OUTPUT"
-            echo "Android SDK found at $SDK — :app-android is in the build."
+            echo "reason=sdk-found" >> "$GITHUB_OUTPUT"
+            echo "Android SDK found at $SDK (platforms/android-35 present) — :app-android is in the build."
           fi
 
       - name: Report toolchain
@@ -549,7 +583,25 @@ jobs:
       # number in the job summary is the number the tool produced.
       # AGENTS.md §1 carries the TODO for turning these into blocking gates.
       - name: 'Lint (advisory): ktlintCheck + detekt — wired, backlogs not yet cleared'
-        continue-on-error: true
+        id: lint
+        # NO `continue-on-error` HERE, and the reason is narrow and worth stating because
+        # "lint is advisory" is easy to misread as "this step cannot fail".
+        #
+        # This step already ends in an explicit `exit 0` on the red-backlog path (below),
+        # so on every ordinary run it succeeds whether or not ktlint and detekt found
+        # anything. `continue-on-error: true` therefore bought nothing — except that it
+        # ALSO swallowed the one real failure this step contains: the guard that exits 1
+        # when a lint task does not exist at all, i.e. when the plugin is not applied and
+        # "this ran and is red" has become "this did not run". The step's own comment
+        # already says the guard "is the difference between 'this ran and is red' and
+        # 'this did not run', and the two are indistinguishable from the outside if the
+        # guard is removed" — the `continue-on-error` was doing precisely that removal,
+        # because GitHub reports a continued-on-error step's conclusion as `success`
+        # whatever happened inside it. Same defect as the bundle-manifest step had.
+        #
+        # So removing it weakens nothing: the backlog stays advisory and non-blocking, and
+        # a missing plugin now fails the build. AGENTS.md §1's TODO for turning the
+        # findings themselves into blocking gates is untouched.
         run: |
           set -uo pipefail
           missing=0
@@ -695,21 +747,70 @@ jobs:
       # this step measure "whichever file the `**` glob left last" (AGENTS.md §5: a gate that
       # measures a different quantity from the one it claims is not a gate).
       - name: 'GATE: Android app bundle built + worst-case per-device slice <= 35 MB'
+        id: android_size_gate
         if: steps.sdk.outputs.enabled == 'true'
         run: |
           set -euo pipefail
           # checkApkSize dependsOn bundleRelease/assembleRelease/assembleDebug and prints one
           # line per container: its file size AND the worst-case per-device slice it gates.
           # Its failure IS the gate failure, so `set -e` here is the assertion.
-          ./gradlew --stacktrace :app-android:checkApkSize
+          #
+          # Capture rather than stream: the two non-vacuity checks below parse this task's
+          # OWN output, and a grep over a pipe that Gradle is still writing into is a race.
+          # `set +e` around the capture is the same trap the eval-smoke, PII and
+          # magic-threshold steps document — GitHub runs a step body with `-e` already on.
+          set +e
+          out=$(./gradlew --stacktrace :app-android:checkApkSize 2>&1)
+          code=$?
+          set -e
+          printf '%s\n' "$out"
+          if [ "$code" -ne 0 ]; then
+            echo "::error:::app-android:checkApkSize exited $code. This is the 35 MB worst-case per-device-slice gate for the shipping artefact and it is blocking; the size table above is the measurement it made before failing."
+            {
+              echo "### Android size gate: FAIL (exit $code)"
+              echo
+              echo "\`:app-android:checkApkSize\` is the gate. Its output is in the log above;"
+              echo "the per-container table it prints is the measurement, not an estimate."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit "$code"
+          fi
+
+          # Non-vacuity, and the reason this step is not just `set -e`. checkApkSize
+          # exiting 0 proves it did not exceed the budget; it does not prove it measured
+          # anything. An earlier version of this step was `./gradlew :app-android:checkApkSize`
+          # and nothing else, so a gate that reported success having found no container at
+          # all would have been indistinguishable from a real pass — which is the failure
+          # mode the PII step calls out for "ran zero tests" and the magic-threshold step
+          # for "exited 0 but scanned nothing". Two assertions close it:
+          measured=$(printf '%s\n' "$out" | sed -n 's/^KASOTI size gate: \([0-9][0-9]*\) container(s) measured\..*/\1/p' | head -n 1)
+          if [ -z "$measured" ] || [ "$measured" -lt 1 ]; then
+            echo "::error::checkApkSize exited 0 but never reported 'KASOTI size gate: N container(s) measured.' with N >= 1 (got '${measured:-no count}'). An exit 0 that measured no artefact is a vacuous pass — the gate exists to bound the bytes one phone downloads, and a pass that bounds nothing is not a pass."
+            exit 1
+          fi
 
           AAB=$(find app-android/build/outputs/bundle/release -name '*.aab' -type f | sort)
           if [ -z "$AAB" ]; then
             echo "::error::no .aab under app-android/build/outputs/bundle/release — bundle delivery is the shipping path and checkApkSize depends on bundleRelease, so this is a real failure, not a skip."
+            {
+              echo "### Android delivery: FAIL — checkApkSize passed but no .aab was produced."
+              echo
+              echo "The gate measured $measured container(s) but the release bundle is missing"
+              echo "from \`app-android/build/outputs/bundle/release\`. Delivery is the .aab"
+              echo "(ADR in app-android/build.gradle.kts), so this is not a reporting quirk."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          # And the gated metric itself, per delivery artefact. checkApkSize prints one
+          # "is within budget" / advisory line per container; require the .aab's.
+          if ! printf '%s\n' "$out" | grep -q 'bundle/app-android-release\.aab is within budget'; then
+            echo "::error::checkApkSize exited 0 but never reported 'bundle/app-android-release.aab is within budget'. Without that line there is no evidence the DELIVERY artefact was the one measured to budget; a pass on some other container is not a pass on the shipping one."
             exit 1
           fi
           {
-            echo "### Android delivery"
+            echo "### Android delivery — GATE PASSED"
+            echo
+            echo "$measured container(s) measured by \`:app-android:checkApkSize\`; the full table"
+            echo "with each container's size and worst-case per-device slice is in the log."
             echo
             echo "| artifact | file size |"
             echo "|---|---|"
@@ -719,27 +820,280 @@ jobs:
               echo "- \`$(basename "$f")\` — ${MB} MB (container; the gate applies to the per-device slice, printed by \`:app-android:checkApkSize\` above)"
             done <<< "$AAB"
             echo
-            echo "Debug APKs are still built and measured by the gate. They are reported as an"
-            echo "advisory, not gated: \`buildTypes\` sets \`isMinifyEnabled = false\` for debug, so"
-            echo "its shared payload is 14.59 MB against release's 4.21 MB while the native"
-            echo "payload is identical. The reason and the measurement are in the KDoc on"
-            echo "\`checkApkSize\` in app-android/build.gradle.kts."
+            echo "Debug APKs are built and measured too, and reported as an ADVISORY rather"
+            echo "than gated, because \`buildTypes\` sets \`isMinifyEnabled = false\` for debug."
+            echo "The numbers and the reason are in the \`checkApkSize\` KDoc in"
+            echo "app-android/build.gradle.kts; they are deliberately not restated here,"
+            echo "because a figure written into a workflow file is stale the moment the next"
+            echo "commit lands (this file's header, rule 2)."
           } >> "$GITHUB_STEP_SUMMARY"
           echo "OK: app bundle built; worst-case per-device slice within 35 MB (gate above)."
 
-      - name: 'Bundle manifest integrity (invariant I12 / AT-12)'
+      # ---------------------------------------------------------------------
+      # BUNDLE MANIFEST INTEGRITY — invariant I12 / AT-12 "model swap".
+      #
+      # THIS STEP WAS A GATE THAT COULD NOT FAIL AND REPORTED `success` ANYWAY. It is
+      # the one real instance of that bug in this workflow, and the evidence is in run
+      # 37112766189:
+      #
+      #   * `continue-on-error: true` was set on it, so its non-zero exit was reported as
+      #     step conclusion `success` by the API while the log carried
+      #         FAIL: manifest '.../bundle_manifest.sample.txt' is NOT populated — 2 placeholder hash(es).
+      #         ##[error]Process completed with exit code 1.
+      #     A green run, on a run whose own log says the gate failed.
+      #   * it wrote nothing to the job summary, so there was not even a misleading row —
+      #     the gate was simply absent from the report while nominally part of it.
+      #
+      # And it could not have been otherwise: `scripts/bundle_manifest.sample.txt` pins one
+      # real artefact and carries two REPLACE_ME placeholders *by design* (the embedding
+      # model was rejected on licence grounds — a recorded decision, THIRD_PARTY.md), and
+      # the one real entry, `eval/models/blazeface_short.tflite`, is git-ignored
+      # (.gitignore:53) so it is absent from a fresh CI checkout even before that. So the
+      # gate was pointed at a subject that cannot exist on this runner, and its real
+      # failure was masked.
+      #
+      # FIXED, in the shape the PII and magic-threshold steps already use — a gate that
+      # cannot verify its subject must say so out loud:
+      #   * `continue-on-error` is gone. Nothing masks this step now.
+      #   * `scripts/ci_bundle_manifest_gate.sh` (new) runs the real `verify_bundle.sh`,
+      #     unmodified, and reports WHICH of two very different states occurred, on
+      #     distinct exit codes: 3 = NOT_SATISFIED (no hash was compared) versus
+      #     1 = FAILED (a populated manifest did not verify) versus 2 = setup error.
+      #     There is no code path in it that turns "compared nothing" into "passed".
+      #   * 1 and 2 fail the build. 3 reports SKIPPED — NOT SATISFIED, in a warning, in a
+      #     bold summary row, and in this step's own name, because GitHub gives a running
+      #     step no way to mark itself skipped. That is the honest disposition: a truthful
+      #     SKIP, never a false SUCCESS.
+      #   * The step name carries the state so the run list is readable without the log.
+      #
+      # WHY 3 IS NOT SIMPLY MADE BLOCKING: invariant I12 would then be red on every push
+      # forever, for a reason no agent can resolve (the weights are not obtainable). The
+      # file's own reasoning at the eval-smoke step applies — "an always-red gate is worse
+      # than no gate, because it is indistinguishable from a real failure and trains
+      # everyone to ignore the log". The honest middle is a gate that cannot be mistaken
+      # for a pass. Promoting NOT_SATISFIED to blocking is a maintainer decision and
+      # belongs in docs/HANDOFF.md §7 with a date and a reason (AGENTS.md §9); it is not
+      # taken here.
+      # ---------------------------------------------------------------------
+      - name: 'GATE: bundle manifest integrity (invariant I12 / AT-12 model swap)'
+        id: bundle_manifest_gate
         if: steps.sdk.outputs.enabled == 'true'
-        continue-on-error: true
-        run: ./scripts/verify_bundle.sh
+        run: |
+          set -uo pipefail
+          set +e
+          out=$(./scripts/ci_bundle_manifest_gate.sh 2>&1)
+          code=$?
+          set -e
+          printf '%s\n' "$out"
+
+          case "$code" in
+            0)
+              # Non-vacuity again, at this level: the classifier already refuses an exit 0
+              # that hashed nothing (it reports SETUP_ERROR instead), but the count is
+              # restated into the summary here so the row cannot read as a bare "pass".
+              n=$(printf '%s\n' "$out" | sed -n 's/^STATE: VERIFIED — \([0-9][0-9]*\) file(s).*/\1/p' | head -n 1)
+              echo "bundle_manifest_state=VERIFIED" >> "$GITHUB_OUTPUT"
+              echo "::notice title=bundle manifest::VERIFIED — $n file(s) hashed and matched their pinned SHA-256."
+              {
+                echo "| bundle manifest integrity (I12 / AT-12) | PASS — $n file(s) hashed, all matched |"
+              } >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            3)
+              # The state that used to be reported as `success`.
+              #
+              # NOTE this branch exits 0, and that is the whole difficulty: GitHub gives a
+              # running step no way to mark itself skipped, so `steps.bundle_manifest_gate
+              # .outcome` is `success` here and CANNOT be used as evidence of anything. The
+              # step therefore publishes `bundle_manifest_state`, and the Gate summary reads
+              # that rather than the outcome — an earlier draft of this fix printed the
+              # outcome and would have written "success" for a gate that compared no hashes,
+              # i.e. the original bug one row over.
+              echo "bundle_manifest_state=NOT_SATISFIED" >> "$GITHUB_OUTPUT"
+              echo "::warning title=bundle manifest NOT SATISFIED::No hash was compared, so invariant I12 (AT-12, model swap) is NOT enforced by this run. scripts/bundle_manifest.sample.txt still carries REPLACE_ME placeholders by design (the embedding model was rejected on licence grounds — THIRD_PARTY.md), and eval/models/**/*.tflite is git-ignored (.gitignore:53) so the pinned detector is absent from a fresh CI checkout. This is a truthful SKIP, not a pass. To make it a pass: scripts/fetch_models.sh, then scripts/verify_bundle.sh --init once the weights exist and provenance is recorded."
+              {
+                echo "| bundle manifest integrity (I12 / AT-12) | **SKIPPED — NOT SATISFIED.** No hash was compared. |"
+                echo
+                echo "This row is the honest state of invariant I12 on this run, and it is the"
+                echo "defect this step was carrying: until 2026-10-03 the same condition was"
+                echo "reported \`success\`, because the step had \`continue-on-error: true\` over a"
+                echo "manifest that cannot be populated in CI. A green row here would assert"
+                echo "something nobody measured."
+                echo
+                echo "Two independent reasons the gate cannot run here, both by design:"
+                echo "1. \`scripts/bundle_manifest.sample.txt\` carries two \`REPLACE_ME\` placeholders."
+                echo "   \`emb_v1.tflite\` was rejected on licence grounds after seven candidates"
+                echo "   (docs/spikes/01-face-model.md §2.1, THIRD_PARTY.md) — a recorded"
+                echo "   decision, not an open gap."
+                echo "2. The one real entry, \`eval/models/blazeface_short.tflite\`, is git-ignored"
+                echo "   (\`.gitignore:53\`) and therefore absent from a fresh CI checkout. So even a"
+                echo "   fully populated manifest would verify nothing on this runner."
+              } >> "$GITHUB_STEP_SUMMARY"
+              echo "bundle manifest: NOT_SATISFIED — no hash compared, reported as SKIPPED, not as a pass."
+              ;;
+            1|2)
+              echo "::error::bundle manifest gate FAILED (ci_bundle_manifest_gate.sh exit $code). A populated bundle manifest did not verify every pinned file — this is invariant I12 / AT-12 'model swap' (THREAT_MODEL.md §3). The per-file report is above. Do NOT demo and do NOT deploy. If a hash legitimately changed, get it signed off before refreshing the manifest (THIRD_PARTY.md); do not edit the manifest to make this step green."
+              {
+                echo "| bundle manifest integrity (I12 / AT-12) | **FAIL (exit $code)** — pinned hash mismatch or unreadable verdict |"
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+              ;;
+            *)
+              echo "::error::ci_bundle_manifest_gate.sh exited $code, which is not one of its documented codes (0 verified / 1 failed / 2 setup error / 3 not satisfied). Treating an unrecognised code as anything but a failure is how this gate went green in the first place."
+              exit 1
+              ;;
+          esac
+
+      # ---------------------------------------------------------------------
+      # PROOF THAT THE STEP ABOVE CAN FAIL. The same argument as the magic-threshold
+      # negative test, and for the same reason: this gate's failure mode is a false
+      # SUCCESS, and a false success cannot be asserted into existence — it has to be
+      # provoked. It WAS a false success (see above), so this step is the one that stops
+      # it coming back.
+      #
+      # WHAT IT ASSERTS, each separately, because each catches a different wrong answer:
+      #   1. a populated manifest over an untouched file exits 0 — otherwise "it failed on
+      #      tampering" proves nothing, since a gate stuck red fails both ways;
+      #   2. the SAME file, tampered on disk after the manifest was pinned, exits NON-ZERO.
+      #      This is the actual attack: RT-E8 / AT-12 "model swap", where the pinned hash is
+      #      untouched and only the bytes on disk change. Asserting on a hand-written wrong
+      #      hash instead would test the manifest parser, not the invariant;
+      #   3. that failure is reported as FAILED, i.e. distinct from the NOT_SATISFIED path
+      #      the step above takes today — so promoting this gate later cannot silently
+      #      reclassify today's skip as a pass;
+      #   4. an UNPOPULATED manifest exits 3, NOT 0 — the exact confusion that made this
+      #      gate report success on run 37112766189, now asserted in both directions;
+      #   5. `git status` is identical before and after.
+      #
+      # HOW IT WORKS, and why it is safe to run in CI: both scripts derive their repository
+      # root from their own location, so COPIES of them in a temp directory, next to a
+      # synthetic asset, operate entirely on that synthetic tree. The real manifest and the
+      # real model are never touched — asserted by (5).
+      # ---------------------------------------------------------------------
+      - name: 'PROOF: the bundle-manifest gate fails on a swapped model, and skips on an unpopulated manifest'
+        id: bundle-manifest-negtest
+        run: |
+          set -uo pipefail
+          before=$(git status --porcelain)
+          sb=$(mktemp -d "${RUNNER_TEMP:-/tmp}/kasoti-bundle-negtest.XXXXXX")
+          mkdir -p "$sb/scripts" "$sb/assets"
+          cp -p ./scripts/verify_bundle.sh "$sb/scripts/"
+          cp -p ./scripts/ci_bundle_manifest_gate.sh "$sb/scripts/"
+
+          if [ ! -x "$sb/scripts/ci_bundle_manifest_gate.sh" ] || [ ! -x "$sb/scripts/verify_bundle.sh" ]; then
+            echo "::error::a copied gate script is not executable in the sandbox, so the negative test cannot invoke it. cp -p should have preserved the mode bit."
+            exit 1
+          fi
+
+          printf 'the real detector weights\n' > "$sb/assets/face.tflite"
+          good=$(sha256sum "$sb/assets/face.tflite" | awk '{print $1}')
+          printf '%s  assets/face.tflite\n' "$good" > "$sb/manifest.txt"
+          printf 'REPLACE_ME  assets/face.tflite\n' > "$sb/unpopulated.txt"
+
+          # (1) clean, populated, honest bytes -> 0. Invoked as an executable, not via
+          # `sh script.sh`: every script in scripts/ is `#!/usr/bin/env bash`, and forcing
+          # one under dash breaks `set -o pipefail` and ${BASH_SOURCE[0]} on an Ubuntu
+          # runner — the same trap the magic-threshold negative test documents.
+          set +e
+          clean_out=$("$sb/scripts/ci_bundle_manifest_gate.sh" --root "$sb" --manifest "$sb/manifest.txt" 2>&1)
+          clean_rc=$?
+          # (2) MODEL SWAP: the manifest still pins the original hash; only the bytes on
+          # disk change. This is RT-E8 / AT-12.
+          printf 'attacker-substituted-weights\n' > "$sb/assets/face.tflite"
+          swapped_out=$("$sb/scripts/ci_bundle_manifest_gate.sh" --root "$sb" --manifest "$sb/manifest.txt" 2>&1)
+          swapped_rc=$?
+          # (4) unpopulated -> 3, and specifically NOT 0.
+          unpop_out=$("$sb/scripts/ci_bundle_manifest_gate.sh" --root "$sb" --manifest "$sb/unpopulated.txt" 2>&1)
+          unpop_rc=$?
+          set -e
+          echo "--- model-swap output (exit $swapped_rc) ---"
+          printf '%s\n' "$swapped_out"
+          echo "--------------------------------------------"
+
+          bad=0
+          if [ "$clean_rc" -ne 0 ]; then
+            echo "::error::negative test is INCONCLUSIVE: a populated manifest over an untouched file already failed (exit $clean_rc), so a later failure proves nothing. Output:"
+            printf '%s\n' "$clean_out"
+            bad=1
+          fi
+          if [ "$swapped_rc" -eq 0 ]; then
+            echo "::error::THE GATE DID NOT FAIL ON A SWAPPED MODEL. The manifest pins $good and the bytes on disk were replaced, and ci_bundle_manifest_gate.sh still exited 0. Invariant I12 / AT-12 'model swap' is the runtime guard for every downstream verdict; a gate that waves this through is worse than no gate."
+            bad=1
+          fi
+          if ! printf '%s\n' "$swapped_out" | grep -q '^STATE: FAILED'; then
+            echo "::error::the swap was rejected (exit $swapped_rc) but not reported as 'STATE: FAILED', so it cannot be told apart from a setup error by the step above — which means a skip and a real integrity failure could be reported the same way."
+            bad=1
+          fi
+          if [ "$unpop_rc" -eq 0 ]; then
+            echo "::error::THE GATE REPORTED SUCCESS ON AN UNPOPULATED MANIFEST (exit 0). This is the exact defect of run 37112766189: a manifest with no real hash in it was reported as a verified bundle. It must exit 3 and be reported as SKIPPED — NOT SATISFIED."
+            bad=1
+          fi
+          if [ "$unpop_rc" -ne 3 ]; then
+            echo "::error::an unpopulated manifest exited $unpop_rc; expected 3 (NOT_SATISFIED). The classifier's whole job is to keep 'compared nothing' off the success path, and an unrecognised code would be handled as a failure by the step above, which would hide that."
+            bad=1
+          fi
+          rm -rf "$sb"
+
+          after=$(git status --porcelain)
+          if [ "$before" != "$after" ]; then
+            echo "::error::this negative test modified the checkout. It is supposed to run entirely in a temp directory."
+            diff <(printf '%s\n' "$before") <(printf '%s\n' "$after") || true
+            bad=1
+          fi
+
+          if [ "$bad" -ne 0 ]; then
+            {
+              echo "### Bundle-manifest negative test: FAIL"
+              echo
+              echo "The gate above cannot be shown to fail a model swap, or cannot be shown to"
+              echo "refuse an unpopulated manifest. See the \`::error::\` annotations in the log."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "::notice title=bundle-manifest negative test::PASS — clean populated manifest exit $clean_rc; the same file swapped on disk exit $swapped_rc reported as FAILED; an unpopulated manifest exit $unpop_rc reported NOT SATISFIED. Checkout unmodified."
+          {
+            echo "| bundle-manifest negative test | PASS — swapped model exits $swapped_rc; unpopulated manifest exits $unpop_rc (NOT success) |"
+            echo
+            echo "Proven on this run, both directions: the gate is green on bytes that match"
+            echo "their pin and red on bytes that do not, and it refuses to call an unpinned"
+            echo "manifest a pass. The second is the defect this run of CI was found to have."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # -- 9 ----------------------------------------------------------------
-      # Every row is a specific step's own outcome where one exists. The old version
-      # stamped `${{ job.status }}` into every row, which made a table that could not
-      # distinguish a pass from a skip from an advisory failure — the least useful
-      # possible summary of a run.
+      # EVERY ROW IS A REAL OUTCOME. The version this replaces hard-coded three claims,
+      # and every one of them was false or misleading on the first green run:
+      #
+      #   * the Android row said "run" or "SKIPPED — no SDK" based on the DETECTION
+      #     result, not on the gate's outcome — so it read "run" whether the size gate
+      #     passed, failed, or was skipped, and there was no `id` on the size-gate step
+      #     for it to have read anything else;
+      #   * it repeated "no `.aab`: AGP 8.9.2 cannot bundle with ABI splits on", which
+      #     stopped being true when `splits.abi` was removed (ADR in
+      #     app-android/build.gradle.kts) — run 37112766189 built a 36.97 MB .aab;
+      #   * it carried no row at all for the bundle-manifest gate, the one step in the
+      #     job that had genuinely failed while reporting `success`;
+      #   * it asserted in bold that "No CI run has ever happened against this tree:
+      #     there is no git remote and no runner". There is a remote, and run 37112766189
+      #     is green. A workflow that denies its own existence is worse than one that
+      #     over-claims: it teaches a reader to distrust every other line of the report.
+      #
+      # The `not run` fallbacks are load-bearing. `steps.<id>.outcome` is the empty string
+      # when a step never started (an earlier failure, or an `if:` that was false), and an
+      # empty cell in this table is indistinguishable from a rendered blank — so SKIPPED,
+      # "not run" and the verdict text all have to be explicit.
       - name: Gate summary
+        id: gate_summary
         if: always()
         run: |
+          # `steps.<id>.outcome` is the verdict BEFORE continue-on-error; `conclusion` is
+          # what the run reports. Every step that can fail now has no continue-on-error,
+          # so the two agree for all of them — which is what makes `outcome` the right
+          # thing to print here rather than the more forgiving `conclusion`.
+          sdk_state="${{ steps.sdk.outputs.enabled }}"
+          if [ "$sdk_state" = "true" ]; then
+            android_row_note="Android SDK present, so :app-android was in the build."
+          else
+            android_row_note="**No usable Android SDK on this runner** (reason: ${{ steps.sdk.outputs.reason }}). The Android build, the .aab and the 35 MB per-device-slice gate did NOT run on this push."
+          fi
           {
             echo "## CI gate summary"
             echo
@@ -751,19 +1105,56 @@ jobs:
             echo "| :ui:test (not SDK-gated) | ${{ steps.ui-tests.outcome || 'not run' }} |"
             echo "| :app-desktop:test | ${{ steps.desktop-tests.outcome || 'not run' }} |"
             echo "| :eval:test | ${{ steps.eval-tests.outcome || 'not run' }} |"
-            echo "| :eval:run smoke | ${{ steps.eval_smoke.outputs.eval_status }} (exit ${{ steps.eval_smoke.outputs.eval_exit }}) |"
+            echo "| :eval:run smoke | ${{ steps.eval_smoke.outputs.eval_status || 'not run' }} (harness exit ${{ steps.eval_smoke.outputs.eval_exit || 'n/a' }}) |"
             echo "| network-ban in :core (HARD) | ${{ steps.network-ban.outcome || 'not run' }} |"
             echo "| PII scrubber (HARD) | ${{ steps.pii-scrubber.outcome || 'not run' }} — suites ran and are green; NOT a claim that no call site logs PII |"
             echo "| magic thresholds (HARD) | ${{ steps.magic-thresholds.outcome || 'not run' }} — a finding fails the build; NOT a claim that :core has no magic numbers (7 file-scoped exemptions) |"
             echo "| magic-threshold negative test | ${{ steps.magic-thresholds-negtest.outcome || 'not run' }} — injected literal must fail the gate |"
-            echo "| ktlintCheck / detekt | ADVISORY — counts above |"
-            echo "| Android SDK-free proof | ${{ steps.sdk_free_android.outcome || 'not run (SDK present)' }} |"
-            echo "| APK size, per-ABI (35 MB budget each) | ${{ steps.sdk.outputs.enabled == 'true' && 'run' || 'SKIPPED — no SDK' }} — runs \`:app-android:checkApkSize\`; no \`.aab\`: AGP 8.9.2 cannot bundle with ABI splits on |"
+            echo "| ktlintCheck / detekt | ADVISORY — ${{ steps.lint.outcome || 'not run' }}; finding counts in their own rows above |"
+            echo "| Android SDK-free proof (verify-offline.sh) | ${{ steps.sdk_free_android.outcome || 'not run' }} — $([ "${{ steps.sdk_free_android.outcome }}" = "skipped" ] && echo 'correctly skipped: the real Gradle build is stronger evidence and :app-android WAS in the build' || echo 'ran') |"
+            echo "| Android .aab + worst-case per-device slice <= 35 MB (HARD) | ${{ steps.android_size_gate.outcome || 'not run' }} — $android_row_note |"
+            echo "| bundle manifest integrity (I12 / AT-12) | ${{ steps.bundle_manifest_gate.outputs.bundle_manifest_state || 'not run' }} — step outcome \`${{ steps.bundle_manifest_gate.outcome || 'n/a' }}\`, but read the STATE, not the outcome: NOT_SATISFIED means no hash was compared, and a SKIP is not a pass |"
+            echo "| bundle-manifest negative test | ${{ steps.bundle-manifest-negtest.outcome || 'not run' }} — a swapped model must fail the gate; an unpopulated manifest must not pass |"
             echo
-            echo "**No CI run has ever happened against this tree**: there is no git remote"
-            echo "and no runner (docs/STATUS.md R-J, R-S). Every row above is unproven until"
-            echo "a run exists. Do not quote this workflow as evidence that anything passes."
+            echo "### What this run did NOT establish"
+            echo
+            echo "Listed explicitly, because a gate that verifies nothing is worse than no gate,"
+            echo "and the only honest way to say that is to say it:"
+            echo
+            if [ "$sdk_state" != "true" ]; then
+              echo "- **The shipping artefact was not size-gated on this push.** No Android SDK on"
+              echo "  the runner, so \`:app-android:bundleRelease\` and \`:app-android:checkApkSize\`"
+              echo "  were SKIPPED. Nothing here says the .aab fits in 35 MB."
+            else
+              echo "- The .aab was built and its worst-case per-device slice measured against the"
+              echo "  35 MB budget. This says nothing about a **universal** APK (not built) or about"
+              echo "  Play's own delivery-side transformations."
+            fi
+            echo "- **Invariant I12 (AT-12, model swap) is not enforced here.** The bundle manifest"
+            echo "  cannot be populated in CI — see the bundle-manifest row above for both reasons."
+              echo "  The gate itself is proven able to fail by the negative test; it is the *subject*"
+              echo "  that is missing, and that is a known gap, not a pass."
+            echo "- **:app-android:test is not run by this workflow at all.** Its unit tests reference"
+            echo "  \`:platform\`'s JVM classes, which the Android variant cannot see (they live in"
+            echo "  \`app-android/src/test/java/dev/kasoti/android/ml/\`). The step"
+            echo "  \`app-android/tools/verify-offline.sh\` covers the SDK-free subset of that module;"
+            echo "  the rest is not covered by any step in this job."
+            echo "- No device is attached, so \`:eval:run parity\` is never run and the eval harness"
+            echo "  reports 4 = INCOMPLETE. INCOMPLETE is not a pass."
+            echo "- ktlint and detekt are advisory and red. They are reported, not satisfied."
+            echo
+            echo "Each gate's own scope — what it proves and what it does not — is stated in that"
+            echo "gate's step summary above, next to the measurement it actually made."
           } >> "$GITHUB_STEP_SUMMARY"
+
+          # A run that silently failed to check something must not read like a clean run.
+          # This is the same rule the PII step applies to "ran zero tests" and the
+          # magic-threshold step applies to "exited 0 having scanned nothing", applied to
+          # the report instead of to a single gate. A warning cannot fail the build, and
+          # must not: an SDK-less runner is a fact about a machine, not a regression.
+          if [ "$sdk_state" != "true" ]; then
+            echo "::warning title=This push did not gate the shipping Android artefact::No usable Android SDK on this runner. :app-android:bundleRelease, :app-android:checkApkSize and the bundle-manifest gate were SKIPPED, not passed. See 'What this run did NOT establish' in the job summary."
+          fi
 
   # ---------------------------------------------------------------------------
   # The offline proof (BUILD.md §1: "after that, airplane-build must succeed
@@ -799,9 +1190,11 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Phase 1 — warm the dependency cache (requires network)
+        id: phase1
         run: ./gradlew --stacktrace :core:jvmTest :eval:test :ui:test
 
       - name: 'Phase 2 — build with --offline (the actual proof)'
+        id: offline_build
         run: |
           set -euo pipefail
           ./gradlew --stop || true
@@ -826,6 +1219,10 @@ jobs:
           fi
           rm -f "$log"
           echo "eval smoke offline: harness exit $code (gradlew exit $gradle_code)."
+          # Surfaced so the job summary can report the harness's own verdict instead of
+          # folding it into a single "Phase 2: success" cell. An INCOMPLETE (4) inside an
+          # otherwise-successful step is exactly the kind of thing a single boolean hides.
+          echo "eval_exit=$code" >> "$GITHUB_OUTPUT"
           case "$code" in
             0|4) echo "accepted (0 = pass, 4 = incomplete, no device attached)." ;;
             2|3) echo "::error::eval smoke offline: harness exit $code (EVAL.md §3: 2 = gate failed, 3 = INVALID)." ; exit 1 ;;
@@ -833,9 +1230,11 @@ jobs:
           esac
 
       - name: 'Offline proof — :core has no network client (works offline)'
+        id: offline_netban
         run: ./scripts/check_no_network_in_core.sh
 
       - name: Offline proof — the Android SDK-free layer still compiles offline
+        id: offline_android
         run: |
           set -uo pipefail
           set +e
@@ -848,22 +1247,48 @@ jobs:
           fi
           echo "::notice::SDK-free layer only: no aapt2/R8/resources/manifest, and no device."
 
-      - name: Offline proof — bundling with --offline
-        continue-on-error: true
+      # NOT a gate today, and it must not read like one. `bundleOffline` is not a Gradle
+      # task in this tree (AGENTS.md §1: "never an AGP task in this tree; there is no
+      # bundle"), so this step has nothing to verify. It used to carry
+      # `continue-on-error: true` over a branch that printed a notice and exited 0 — a
+      # step that verified nothing and reported `success`, which is the defect class this
+      # job exists to remove. `continue-on-error` is gone; the not-implemented branch is
+      # unchanged in what it DOES (it still declines to run a task that does not exist)
+      # and differs only in how loudly it says so: a warning annotation, and a row in the
+      # offline summary that reads NOT IMPLEMENTED rather than blank.
+      #
+      # Not made blocking: the task is declared in BUILD.md §3 / AGENTS.md §1 and simply
+      # does not exist, so a hard failure here would be a permanently red weekly job for a
+      # missing feature rather than a regression — the same always-red reasoning the
+      # eval-smoke step applies to exit 4. Closing it means implementing the task.
+      - name: 'Offline proof — bundling with --offline'
+        id: offline_bundle
         run: |
           set -euo pipefail
           if ./gradlew -q help --task bundleOffline >/dev/null 2>&1; then
             ./gradlew --offline --stacktrace bundleOffline
+            echo "bundle_offline_state=RAN" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice::`bundleOffline` is not a Gradle task in this tree yet."
-            echo "::notice::Declared in BUILD.md §3 / AGENTS.md §1; not implemented."
+            echo "::warning title=Offline bundling NOT IMPLEMENTED::\`bundleOffline\` is not a Gradle task in this tree, so this step verified nothing. Declared in BUILD.md §3 / AGENTS.md §1; there is no bundle and no offline bundling. This row is NOT IMPLEMENTED, not passed."
+            echo "::notice::Run \`gh run list\` and read this row as NOT IMPLEMENTED. A green step here means the guard worked, not that a bundle was built."
+            echo "bundle_offline_state=NOT_IMPLEMENTED" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Offline proof — result
+        id: offline_result
         if: always()
         run: |
           {
             echo "## Offline (--offline) proof — ${{ job.status }}"
+            echo
+            echo "| Step | Result |"
+            echo "|---|---|"
+            echo "| Phase 1 — warm the dependency cache (needs network) | ${{ steps.phase1.outcome || 'not run' }} |"
+            echo "| Phase 2 — build with --offline (the actual proof) | ${{ steps.offline_build.outcome || 'not run' }} |"
+            echo "| eval smoke --offline (inside Phase 2) | harness exit ${{ steps.offline_build.outputs.eval_exit || 'n/a' }} — 0 pass / 4 INCOMPLETE (no device) are both accepted; 2 and 3 fail the job |"
+            echo "| :core has no network client | ${{ steps.offline_netban.outcome || 'not run' }} |"
+            echo "| Android SDK-free layer compiles offline | ${{ steps.offline_android.outcome || 'not run' }} — SDK-free layer only: no aapt2/R8/resources/manifest, and no device |"
+            echo "| offline bundling | ${{ steps.offline_bundle.outputs.bundle_offline_state || 'not run' }} |"
             echo
             echo "**What this proves:** a build that has already resolved its dependencies"
             echo "needs no network to compile, test and run the eval harness. That is the"
@@ -874,6 +1299,10 @@ jobs:
             echo "to resolve from with --offline. A real cold-start proof needs a"
             echo "self-hosted runner with a persistent Gradle home (docs/STATUS.md)."
             echo
-            echo "**And:** like the `verify` job, this has never run against this tree."
-            echo "There is no git remote and no runner (docs/STATUS.md R-J, R-S)."
+            echo "**And:** \`offline bundling\` is **${{ steps.offline_bundle.outputs.bundle_offline_state || 'not run' }}** —"
+            echo "\`bundleOffline\` is not a Gradle task in this tree. That row is a declared gap,"
+            echo "not a pass."
+            echo
+            echo "This job runs on a schedule or on manual dispatch, so it is reported"
+            echo "\`skipped\` on an ordinary push. That is the event filter, not a gate result."
           } >> "$GITHUB_STEP_SUMMARY"
