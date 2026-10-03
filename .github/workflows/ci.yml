@@ -447,26 +447,36 @@ jobs:
                    "$sb/core/src/commonMain/kotlin/dev/kasoti/probe"
           # The real script and the real registry, unmodified. The registry copy is what
           # makes the cross-check in the script run for real rather than short-circuiting.
-          cp ./scripts/check_no_magic_thresholds.sh "$sb/scripts/"
+          cp -p ./scripts/check_no_magic_thresholds.sh "$sb/scripts/"
           cp ./core/src/commonMain/kotlin/dev/kasoti/fusion/thresholds.v1.json \
              "$sb/core/src/commonMain/kotlin/dev/kasoti/fusion/"
           probe="$sb/core/src/commonMain/kotlin/dev/kasoti/probe/Probe.kt"
 
           # `dev/kasoti/probe/` is a path no structural exemption claims, which is what
           # makes this a test of the GATE and not of an allowlist rule.
+          if [ ! -x "$sb/scripts/check_no_magic_thresholds.sh" ]; then
+            echo "::error::the copied script is not executable in the sandbox, so the negative test cannot invoke it. cp -p should have preserved the mode bit."
+            exit 1
+          fi
+
           write_probe() {
             printf 'package dev.kasoti.probe\n\ninternal object Probe {\n    fun gate(raw: Double): Boolean = raw > %s\n}\n' "$1" > "$probe"
           }
 
           write_probe '0.0'
           set +e
-          clean_out=$(sh "$sb/scripts/check_no_magic_thresholds.sh" 2>&1)
+          # Run the script the way its shebang says to run it. `sh script.sh` forces it under
+          # dash on an Ubuntu runner, where `set -o pipefail` is an illegal option and
+          # ${BASH_SOURCE[0]} does not resolve -- the script dies before scanning anything, so
+          # the sandbox looks broken and this test reports INCONCLUSIVE instead of testing the
+          # gate. Every script in scripts/ is `#!/usr/bin/env bash`; invoke them as executables.
+          clean_out=$("$sb/scripts/check_no_magic_thresholds.sh" 2>&1)
           clean_rc=$?
           set -e
 
           write_probe '0.42'
           set +e
-          dirty_out=$(sh "$sb/scripts/check_no_magic_thresholds.sh" 2>&1)
+          dirty_out=$("$sb/scripts/check_no_magic_thresholds.sh" 2>&1)
           dirty_rc=$?
           set -e
           echo "--- injected-failure output (exit $dirty_rc) ---"
