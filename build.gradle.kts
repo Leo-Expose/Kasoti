@@ -14,11 +14,32 @@
 //   and the docs both end up describing a build nobody is running.
 //
 //   Applying both plugins from the root `subprojects {}` block is what makes the tasks real
-//   without duplicating four lines into five module build scripts — and it is the reason a new
+//   without duplicating four lines into six module build scripts — and it is the reason a new
 //   module is linted by default rather than by remembering to opt in. The list below is
-//   explicit rather than "every subproject" because `:app-android` is only in the build when
-//   an SDK is present (settings.gradle.kts) and a lint task that appears and disappears with
-//   the SDK is a gate nobody can rely on.
+//   explicit rather than "every subproject" so that "which modules are linted" is one readable
+//   line instead of a diff to inspect.
+//
+//   `:app-android` WAS deliberately left off this list, and the reason recorded was that it is
+//   only in the build when an SDK is present (settings.gradle.kts), so "a lint task that appears
+//   and disappears with the SDK is a gate nobody can rely on". That reasoning was sound about the
+//   gate and wrong about the conclusion, and the two have to be separated:
+//
+//     * The SDK-presence problem is real and is STILL real: with no SDK `:app-android` is not
+//       `include`d at all, so `sh gradlew ktlintCheck detekt` covers five modules; with an SDK it
+//       covers six. That is a fact about this file's reach, and the `logger.lifecycle` banner at
+//       the bottom prints the module list on every run so the reader can tell which world they
+//       are in — the same thing `.github/workflows/ci.yml` does for the whole build.
+//     * The conclusion was wrong because the alternative was not "a reliable gate", it was **no
+//       coverage at all**. `:app-android`'s ~40 Kotlin files had never been seen by either tool,
+//       so a real coverage gap was being traded for a tidiness property. Both tools are advisory
+//       (`continue-on-error: true` in ci.yml), so adding the module can only ever add signal; the
+//       only thing it costs is a larger number. It is also, by a wide margin, the code with the
+//       least review elsewhere in the repo — the only module authored without an SDK present —
+//       which is the wrong place to leave the linters blind.
+//
+//   So `:app-android` is on the list, and the SDK caveat above is recorded rather than resolved:
+//   a lint total measured without an SDK is a five-module number and one measured with an SDK is
+//   a six-module number, and anyone quoting either has to say which.
 
 plugins {
     alias(libs.plugins.detekt) apply false
@@ -95,11 +116,17 @@ allprojects {
 //          what makes AGENTS.md §2's "keep :core files <400 lines" enforceable rather than
 //          aspirational.
 
-/** Modules that are linted. `:app-android` is excluded on purpose — see the comment above. */
-val LINTED_MODULES = setOf(":core", ":platform", ":app-desktop", ":eval", ":ui")
+/**
+ * Modules that are linted. All six, including `:app-android`.
+ *
+ * `:app-android` was excluded; it is now included, and the reason it was excluded is written out
+ * in the comment block above rather than deleted — the SDK-presence caveat it relied on is still
+ * true, it just is not a reason to leave the module permanently uncovered.
+ */
+val LINTED_MODULES = setOf(":core", ":platform", ":app-desktop", ":eval", ":ui", ":app-android")
 
 // Read here, not inside `subprojects {}`: the version-catalog `libs` accessor is not available
-// in that block, and hoisting it also makes the pin a single value applied to all five modules.
+// in that block, and hoisting it also makes the pin a single value applied to all six modules.
 val ktlintEngineVersion: String = libs.versions.ktlintEngine.get()
 
 subprojects {

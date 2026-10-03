@@ -24,8 +24,10 @@ Theme: truth before screens. No UI beyond debug screens.
 
 **M0 exit:** first real numbers exist (however bad) · sync file round-trips · clip exists · model decision locked. **Decision dates:** embed/detector **closed 2026-09-30** — detector adopted, embedder rejected on licence grounds (`docs/spikes/01-face-model.md`) · OCR route **undecided and undecidable** without a build.
 
-**M0 status: not exited.** `:core` and the harness are done and green (**896 tests across five
-modules** — core 459, platform 137, app-desktop 206, eval 39, ui 55; re-measured **2026-10-03**
+**M0 status: not exited.** `:core` and the harness are done and green (**917 tests across five
+modules** — core 459, **platform 155**, app-desktop 206, eval 39, **ui 58**; re-measured
+**2026-10-03** at HEAD `a0f5a45` with `:app-android:test` added (426 executions / 142 unique per
+build-type variant), so **917** in the five non-Android modules
 in the source checkout with `--rerun-tasks`, 20 tasks all executed; it read 691 / core 302 /
 app-desktop 169 / ui 44 on 2026-09-30 and those were stale). The eval **suites** were not re-run
 on 2026-10-03, so their numbers still belong to their run ids: `smoke` 11 pass/1 skip = run
@@ -45,7 +47,7 @@ Theme: airplane-mode verdict on real phones.
 | M1.4 | Trust enroll (supervisor PIN)/verify/revoke/recheck-scheduler | Android | 3 | policy tests + UX walkthrough |
 | M1.5 | Sync export/import + HMAC provisioning + merge-verify on 2 phones | Core+Android | 3 | A→B→A round-trip; quarantine path tested |
 | M1.6 | Face threshold tune on pairs v1 + per-bucket report; macro re-tune on v1 | Vision | 3 | operating points in FUSION; histograms saved |
-| M1.7 | APK size ≤35 MB + airplane-install test + battery sample | Android | 2 | CI size gate green; numbers logged — ⚠️ **the size half is DONE 2026-10-03** (`:app-android:checkApkSize` green: 33.39 / 26.56 MB debug, 22.97 / 16.14 MB release, all within 35.0 MB, from 4 per-ABI APKs). **The airplane-install half is not started** — no device, no `adb`. **And there is no `.aab`**: `bundleRelease` fails on AGP 8.9.2 with ABI splits, so delivery is APK-only |
+| M1.7 | APK size ≤35 MB + airplane-install test + battery sample | Android | 2 | CI size gate green; numbers logged — ⚠️ **the size half is DONE 2026-10-03** (`sh gradlew :app-android:checkApkSize` exit 0, 4 containers, gating the compressed worst-case per-device slice: `.aab` 14.60 MB · release APK 25.52 · sideload APK 22.91 · debug APK 35.90 **ADVISORY, 0.90 over**; all within the unchanged 35.0 MB). **The airplane-install half is not started** — no device, no `adb`. ⚠️ **CORRECTED 2026-10-03: this row said "33.39 / 26.56 MB debug, 22.97 / 16.14 MB release … from 4 per-ABI APKs" and "there is no `.aab`: `bundleRelease` fails on AGP 8.9.2 with ABI splits, so delivery is APK-only".** Both were true of the now-removed `splits.abi` configuration. **Delivery switched to an Android App Bundle**: `bundleRelease` is BUILD SUCCESSFUL and `app-android-release.aab` (36.97 MB) is the shipping product; `splits.abi` had to go because it is mutually exclusive with bundling on AGP 8.9.2; and a scoped `sideload` build type supplies the one-ABI handset APK. **No `.aab` has been uploaded to Play** |
 | M1.8 | Milestone review | all | 1 | SPEC §6 M1 acceptance |
 
 ## M2 — Desktop console + cross-device intel (Week 3)

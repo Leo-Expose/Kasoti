@@ -69,7 +69,7 @@ Every PR must satisfy all seven. "Done" is not a judgement call.
    network, you have not finished it — no KASOTI verdict may require one.
    Say explicitly in the PR whether demo-mode and airplane mode still work.
 7. **Reviewed by the owner of the touched area** (docs/HANDOFF.md §2 roles
-   table), and lint clean. ⚠️ **Still unmeetable, for two different reasons — and the first half of this paragraph used to state a false one.** It used to say "`ktlintCheck` and `detekt` are not Gradle tasks in this tree". **They are**: both are wired (root `build.gradle.kts` applies them to `:core :platform :app-desktop :eval :ui`) and both **run** — they simply **fail**, and they are deliberately detached from `check` so they report without blocking. So: (a) the only reviewer is you (§"solo" above), which no amount of tooling fixes; and (b) "lint clean" **can** now be checked and **is not clean** — `sh gradlew ktlintCheck --continue` reports **4 267** violations and `sh gradlew detekt` reports **1 349** weighted issues (measured 2026-10-03), and `:app-android` is not in the linted module list at all. NFR-M1 ("detekt+ktlint clean") is genuinely unmet; clearing it is the `TODO(M2,@build)` in `AGENTS.md` §1. **Do not** reach green by disabling a rule or committing a baseline — that is weakening a gate. Run the tasks, report the numbers, and say in the description that lint is red and by how much.
+   table), and lint clean. ⚠️ **Still unmeetable, for two different reasons — and the first half of this paragraph used to state a false one.** It used to say "`ktlintCheck` and `detekt` are not Gradle tasks in this tree". **They are**: both are wired (root `build.gradle.kts` applies them to five modules at committed `a0f5a45` — `:core :platform :app-desktop :eval :ui` — and to six in the current working tree, where another agent has added `:app-android` uncommitted) and both **run** — they simply **fail**, and they are deliberately detached from `check` so they report without blocking. So: (a) the only reviewer is you (§"solo" above), which no amount of tooling fixes; and (b) "lint clean" **can** now be checked and **is not clean** — `sh gradlew ktlintCheck --continue --rerun-tasks` reports **5 683** findings and `sh gradlew detekt --continue` reports **1 497** weighted issues (measured 2026-10-03; **1 250** if you exclude `:app-android`). ⚠️ **Always say which tree a lint total came from** — the build script's own banner prints the module list, and quoting a total without it is ambiguous. ⚠️ **Always measure `ktlintCheck` with `--continue`**: without it Gradle stops at the first failing task and the same tree reads 1 689 or 3 130 instead of 5 683. NFR-M1 ("detekt+ktlint clean") is genuinely unmet; clearing it is the `TODO(M2,@build)` in `AGENTS.md` §1. **Do not** reach green by disabling a rule or committing a baseline — that is weakening a gate. Run the tasks, report the numbers, and say in the description that lint is red and by how much.
 
 ---
 
@@ -138,13 +138,17 @@ Notes on the two that people skip:
   measure it, say so in the PR — an unmeasured size claim is a review fail in
   the same way an unmeasured accuracy claim is. ✅ **Since 2026-10-03 Android sizes
   ARE measurable**: `sh gradlew :app-android:checkApkSize` reports every produced
-  per-ABI APK against the 35.0 MB budget (measured 2026-10-03: 33.39 MB debug
-  arm64, 26.56 MB debug armeabi-v7a, 22.97 MB release arm64, 16.14 MB release
-  armeabi-v7a). Cite that task and its output. ⚠️ Two Android sizes are still
-  **not** measurable and must be recorded as such rather than estimated: the
-  **`.aab`** (there is none — `bundleRelease` fails on AGP 8.9.2 with ABI splits,
-  so delivery is APK-only), and anything requiring a **device** (no `adb`, no
-  handset: install size, battery, crash-freedom).
+  container against the 35.0 MB budget, and it gates each one's **compressed
+  worst-case per-device slice** — not its file size (measured 2026-10-03: `.aab`
+  14.60 MB · release APK 25.52 · sideload APK 22.91 · debug APK 35.90 **advisory,
+  0.90 over**). Cite that task and its output. ⚠️ **CORRECTED 2026-10-03: this
+  paragraph said the gate "reports every produced per-ABI APK" and listed four
+  split-APK sizes (33.39 / 26.56 / 22.97 / 16.14 MB), then said the **`.aab`** was
+  "not measurable — there is none".** All of that described the now-removed
+  `splits.abi` configuration. The bundle builds and the gate measures it. ⚠️ Anything
+  requiring a **device** is still **not** measurable and must be recorded as such
+  rather than estimated (no `adb`, no handset: install size, battery,
+  crash-freedom).
 
 ---
 
@@ -154,10 +158,10 @@ Notes on the two that people skip:
 export JAVA_HOME=/usr/lib/jvm/java-17-openjdk   # or your Temurin 17 — Gradle needs JDK 17
 
 sh gradlew :core:jvmTest                         # fast logic tests — 459 tests
-sh gradlew :ui:test                              # 55 tests
+sh gradlew :ui:test                              # 58 tests (not SDK-gated — builds with or without an SDK)
 sh gradlew :platform:jvmTest                     # 137 tests
 sh gradlew :app-desktop:test                     # 206 tests
-sh gradlew :eval:test                            # 39 tests   (896 across the five)
+sh gradlew :eval:test                            # 39 tests   (917 across the five non-Android modules)
 sh gradlew :app-desktop:run                      # headless post-console
 sh gradlew :eval:run --args="smoke"              # fixtures harness (~60 s) — EXITS 4
 sh gradlew :eval:run --args="full"               # full corpora — EXITS 4
@@ -170,10 +174,16 @@ sh gradlew :eval:run --args="full"               # full corpora — EXITS 4
 ./scripts/pii_scrubber_test.sh                   # GREEN (7 suites / 111 tests) and BLOCKING
 
 # android — needs an SDK in local.properties or ANDROID_HOME
-sh gradlew :app-android:assembleDebug            # 2 APKs: 33.39 MB / 26.56 MB
-sh gradlew :app-android:checkApkSize             # the 35 MB gate over every artefact
-# ⛔ :app-android:bundleRelease fails (AGP 8.9.2 x ABI splits) -> no .aab, APK-only
-# ⛔ :app-android:test fails: 160 compile errors in the two ml/ parity test files
+sh gradlew :app-android:assembleDebug            # 1 universal APK: app-android-debug.apk (88.72 MB)
+sh gradlew :app-android:bundleRelease            # OK -> app-android-release.aab (36.97 MB). THE PRODUCT.
+sh gradlew :app-android:sideloadApk              # OK -> 1-ABI APK, arm64-v8a (23.01 MB). LOCAL ONLY
+sh gradlew :app-android:test                     # OK — 426 executions / 142 unique per build-type variant
+sh gradlew :app-android:checkApkSize             # the 35 MB gate over every container
+# ⚠️ CORRECTED 2026-10-03: the two ⛔ lines here used to say ":app-android:bundleRelease fails
+# (AGP 8.9.2 x ABI splits) -> no .aab, APK-only" and ":app-android:test fails: 160 compile
+# errors". Both were true of the `splits.abi` configuration and neither is true now: there are
+# no ABI splits, the bundle builds, and the two ml/ parity suites moved to
+# `platform/src/jvmTest/`. Bundle delivery IS the shipping path now.
 
 # hardware
 cd hardware && pdflatex calibration_card.tex    # prints the calibration card
@@ -251,7 +261,11 @@ There is no standup and no one to ask. Substitute, in this order:
   re-read. Do not silently refactor around it.
 - **A command in AGENTS.md §1 does not work** → **fix AGENTS.md §1** as part of
   the PR that changed it. A stale command list costs more than a stale comment.
-  This is not hypothetical: a docs audit found `ktlintCheck`, `detekt` and
-  `bundleOffline` advertised there and not present in the build.
+  This is not hypothetical, and it cuts both ways. A docs audit found `ktlintCheck` and
+  `detekt` advertised there and not present in the build (both are now wired and run). ⚠️
+  **The reverse happened on 2026-10-03**: `AGENTS.md` §1 said `:app-android:bundleRelease`
+  and `:app-android:test` were `⛔ KNOWN BROKEN`, and both had been fixed — the bundle builds
+  and the test task is green. `bundleOffline` is genuinely still not a task
+  (`sh gradlew -q help --task bundleOffline` exits 1), so do not "fix" that one.
 - **Unsure whether something is P0 (stop-line)** → it probably is. Stop the line,
   say so, and re-rank it yourself the way a lead would.

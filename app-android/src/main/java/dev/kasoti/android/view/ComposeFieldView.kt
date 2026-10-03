@@ -380,7 +380,13 @@ private fun CaptureCard(state: AppState, screen: ScreenState.Capturing, on: (UiE
                     }
                     OutlinedButton(
                         onClick = {
-                            on(UiEvent.AcceptQuad(screen.progress.current?.let { listOf(0f to 0f, 1f to 0f, 1f to 1f, 0f to 1f) } ?: emptyList()))
+                            on(
+                                UiEvent.AcceptQuad(
+                                    screen.progress.current?.let {
+                                        listOf(0f to 0f, 1f to 0f, 1f to 1f, 0f to 1f)
+                                    } ?: emptyList(),
+                                ),
+                            )
                         },
                         modifier = Modifier.tappable(),
                     ) {

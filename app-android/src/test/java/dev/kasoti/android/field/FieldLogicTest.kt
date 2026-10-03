@@ -3,13 +3,9 @@ package dev.kasoti.android.field
 import dev.kasoti.factory.GrayImage
 import dev.kasoti.fusion.FindingCode
 import dev.kasoti.fusion.Track
-import dev.kasoti.fusion.Verdict
 import dev.kasoti.mrz.MrzBuilder
 import dev.kasoti.mrz.MrzPerson
-import dev.kasoti.threshold.ThresholdName
 import dev.kasoti.time.IsoDate
-import kotlin.math.abs
-import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse

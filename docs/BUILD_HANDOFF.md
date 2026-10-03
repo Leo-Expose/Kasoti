@@ -22,15 +22,40 @@ Verhoeff, date and format checks, a secure-QR verification path, FFT/LBP print f
 a trained linear classifier, face math and detection curves, a file-backed crossing diary with
 alias/travel/facilitator rules, the `kasoti-sync/1` merge protocol, the full FUSION.md verdict
 engine, a hash-chained audit log, English and Hindi strings, and an evaluation harness that
-refuses to pass a run it cannot justify. **896 Gradle tests and 201 SDK-free Android tests,
-zero failures** (measured 2026-10-03: core 459 · platform 137 · app-desktop 206 · eval 39 ·
-ui 55, `sh gradlew … --rerun-tasks`, 20 tasks executed).
+refuses to pass a run it cannot justify. ⚠️ **CORRECTED 2026-10-03: this said "896 Gradle tests and 201 SDK-free Android tests, zero
+failures (measured 2026-10-03: core 459 · platform 137 · app-desktop 206 · eval 39 · ui 55)".**
+Re-measured at HEAD `a0f5a45`, one command, `BUILD SUCCESSFUL in 2m21s`, 132 tasks all executed:
+**917 Gradle tests across the five non-Android modules** (core 459 · **ui 58** · **platform 155** ·
+app-desktop 206 · eval 39) **plus `:app-android:test` at 426 executions / 142 unique per
+build-type variant**, so **1 343 executions** across all six modules — and **204** SDK-free Android
+tests via `app-android/tools/verify-offline.sh`. Zero failures throughout.
 A desktop console runs the whole cascade, from a checkout **and from a packaged distribution**.
-**An Android field app now compiles and packages** — four APKs, all inside the unchanged 35 MB
-budget — **and has never been run on a device.** **CI has run twice and failed both times**, at
-the first step, because the `gradlew` exec bit is not committed — so nothing here has ever been
-verified by a machine other than this one. **There is no `.aab` and no Play Store bundle**:
-`:app-android:bundleRelease` fails on AGP 8.9.2 once ABI splits are on, so delivery is APK-only.
+**An Android field app now compiles, packages and bundles** — one universal debug APK, one
+universal release APK, a 1-ABI `sideload` APK and the 36.97 MB `app-android-release.aab`, all
+inside the unchanged 35 MB per-device-slice budget — **and has never been run on a device.**
+
+⚠️ **CORRECTED 2026-10-03. This paragraph previously read "four APKs … and has never been run on
+a device. CI has run twice and failed both times, at the first step, because the `gradlew` exec
+bit is not committed — so nothing here has ever been verified by a machine other than this one.
+There is no `.aab` and no Play Store bundle: `:app-android:bundleRelease` fails on AGP 8.9.2 once
+ABI splits are on, so delivery is APK-only."** Every one of those four claims stopped being true
+the same day:
+
+* `gradlew` is committed **mode `100755`** (commit `df6d309`) — the exec bit landed.
+* **CI run `37112766189` on `f6a0540` is GREEN, 8m25s.** The two oldest runs (`36658909646`,
+  `36663026772`, both 2026-09-30) did die at step 1 on **exit 126**, and that history is kept
+  above rather than deleted; but two *later* runs failed on **real** gates — `37090379579` on the
+  Android size gate, `37110497967` on the magic-threshold negative test — and those are kept too,
+  because "the gate caught a real problem" and "the gate has never fired" are both evidence.
+* `bundleRelease` **succeeds**. It had failed only because `splits.abi` was enabled, and the
+  splits were removed (they are mutually exclusive with app bundles on AGP 8.9.2).
+* The `.aab` exists and is the shipping product. **No `.aab` has been uploaded to Play**, and
+  `release` is unsigned until `scripts/provision.sh` supplies a config.
+
+**What has NOT changed: nothing has ever run on a device.** No `adb`, no handset, so the
+airplane-install proof is INCOMPLETE, NFR-R1's 50 crash-free runs are 0, and keystore, wipe PIN and
+camera/ML-Kit behaviour are unexercised.
+
 There is no face embedder — a licensing wall plus an unpriced licence, not a backlog. The macro
 model is trained on synthetic textures and says so on every surface. The macro and face datasets
 are zero rows.
@@ -49,7 +74,7 @@ compiler. This is the single most common first-failure.
 
 | Command | Expected |
 |---|---|
-| `sh gradlew :core:jvmTest :ui:test :platform:jvmTest :app-desktop:test :eval:test --rerun-tasks` | `BUILD SUCCESSFUL` · **896 tests · 0 failures · 0 skipped** (core 459, platform 137, app-desktop 206, eval 39, ui 55). Measured **2026-10-03** in the source checkout (`9a04f40` + a dirty tree), 20 actionable tasks all executed. On a clean clone expect **1 skipped** (`DetectorParityReferenceTest` — the `.tflite` is git-ignored; `sh scripts/fetch_models.sh` makes it run) |
+| `sh gradlew :core:jvmTest :ui:test :platform:jvmTest :app-desktop:test :eval:test --app-android:test --rerun-tasks` | `BUILD SUCCESSFUL in 2m21s` · **917 tests · 0 failures · 0 skipped** across the five non-Android modules (core 459, **ui 58**, **platform 155**, app-desktop 206, eval 39), plus `:app-android:test` at **426 executions / 142 unique per build-type variant** → **1 343 executions** over all six modules. Measured **2026-10-03** at HEAD `a0f5a45` + a dirty tree, **132 actionable tasks all executed**. ⚠️ this row said **896** (platform 137, ui 55) earlier the same day. On a clean clone expect **1 skipped** (`DetectorParityReferenceTest` — the `.tflite` is git-ignored; `sh scripts/fetch_models.sh` makes it run) |
 | `sh gradlew :eval:run --args="smoke"` | harness **exits 4** = INCOMPLETE · 12 gates, 11 pass, 1 device-skip, 0 fail. **Last run 2026-09-30**, run id `eval-20260930-smoke-93ec` — not re-run 2026-10-03 |
 | `sh app-android/tools/verify-offline.sh` | `201 tests started / 201 successful / 0 failed` · exit 0 (measured 2026-10-03; read 189 on 2026-09-30) |
 | `sh scripts/check_no_network_in_core.sh` | exit 0, **93** files scanned (measured 2026-10-03; 78 on 2026-09-30) |
@@ -60,8 +85,9 @@ compiler. This is the single most common first-failure.
 | `sh gradlew :app-android:assembleDebug` | `BUILD SUCCESSFUL` · 2 APKs: arm64-v8a **33.39 MB**, armeabi-v7a **26.56 MB** |
 | `sh gradlew :app-android:assembleRelease` | `BUILD SUCCESSFUL` · 2 APKs: arm64-v8a **22.97 MB**, armeabi-v7a **16.14 MB** |
 | `sh gradlew :app-android:checkApkSize` | `BUILD SUCCESSFUL` · 4 artefacts measured, all within **35.0 MB** |
-| `sh gradlew :app-android:bundleRelease` | ⛔ **exit 1** — `:app-android:buildReleasePreBundle` → `Sequence contains more than one matching element.` **No `.aab` exists.** See §5 |
-| `sh gradlew :app-android:test` | ⛔ **exit 1** — 160 compile errors, 150 in `ml/BlazeFaceDesktopParityTest.kt` + 10 in `ml/BlazeFaceInputTest.kt`. See §5 |
+| `sh gradlew :app-android:bundleRelease` | ✅ **BUILD SUCCESSFUL** — `app-android/build/outputs/bundle/release/app-android-release.aab`, 36.97 MB (38 764 190 B). ⚠️ **this row read `⛔ exit 1 … No `.aab` exists` earlier on 2026-10-03**; that was true while `splits.abi` was enabled, and the splits have been removed. See §5 |
+| `sh gradlew :app-android:test` | ✅ **BUILD SUCCESSFUL — 426 executions / 142 unique tests per build-type variant** (20 suites × debug/release/sideload), 0 failures. ⚠️ **this row used to say `⛔ exit 1, 160 compile errors`**; the two `ml/BlazeFace*.kt` suites moved to `platform/src/jvmTest/` |
+| `sh gradlew :app-android:sideloadApk` | ✅ **BUILD SUCCESSFUL** — 1-ABI APK, arm64-v8a, 23.01 MB / 22.91 MB per-device slice; `-Pkasoti.sideloadAbi=armeabi-v7a` → 16.18 MB / 16.06 MB. Local-testing artefact, **never installed** |
 | `sh scripts/airplane_install_test.sh` | **exit 1** — finds all four APKs, then refuses on the 2 unpopulated hashes in `scripts/bundle_manifest.sample.txt`. With `--skip-bundle`: **exit 2** (INCOMPLETE, no `adb`, no device) |
 | `sh gradlew :app-desktop:installDist` | `BUILD SUCCESSFUL` → `app-desktop/build/install/kasoti/`. **This was "does not exist" until 2026-09-30**; see §4.7 |
 | `sh gradlew :app-desktop:run --args="sample"` | writes a zero-PII specimen to `demo-specimen/` and prints its field table; screen it with `--fields demo-specimen/specimen.json` |
@@ -159,10 +185,15 @@ in opposite directions:** (a) `assembleDebug`/`assembleRelease` now succeed, so 
 been through a real AGP/aapt2/d8/R8/Compose build and the stub signatures are no longer the only
 thing standing between the code and a real compiler — but they are still *our reading* of
 `Context`/`Log`/`Interpreter`, and **nothing has been run on hardware**, so no runtime behaviour
-is verified; (b) **`:app-android:test` does not compile** (160 errors), which means this script is
-currently the **only** thing that runs the two `ml/` parity suites. **Its own closing summary line
-is now stale** — it says aapt2/d8/R8/Compose and the real SDK signatures "are all still
-unverified", which `assembleDebug` has disproved. The 201/201 result is real; the summary is not.
+is verified; (b) ⚠️ **CORRECTED 2026-10-03: this said "`:app-android:test` does not compile
+(160 errors), which means this script is currently the **only** thing that runs the two `ml/`
+parity suites."** That is now **false**: `:app-android:test` is BUILD SUCCESSFUL (142 unique tests
+per build-type variant, 426 executions) and the parity suites moved to
+`platform/src/jvmTest/kotlin/dev/kasoti/android/ml/`, so they are run by `:platform`'s `:jvmTest`
+**and** by this script — covered twice. **Its own closing summary line is still stale** — it says
+aapt2/d8/R8/Compose and the real SDK signatures "are all still unverified", which
+`assembleDebug`/`bundleRelease` have disproved. The **204/204** result is real; the summary is
+not.
 
 **6. Verhoeff was wrong and is now generated, not transcribed.**
 It was running `c = D[c][digit]` with no `P` table — D5 multiplication standing in for the
@@ -178,10 +209,10 @@ that is exactly the fabrication the eval protocol exists to prevent.
 
 | Not done | Why |
 |---|---|
-| ~~`:app-android` compiled~~ → **DONE 2026-10-03** | Was "no Android SDK on this machine". An SDK is now installed and the module compiles and packages. **The one-character root cause was `app-android/build.gradle.kts` line 1 starting with `#`** — a Groovy comment marker, parsed as source by the Kotlin script compiler. With that fixed, plus `compileSdk` 34→35 (an androidx `minCompileSdk` requirement, `minSdk 26`/`targetSdk 34` unchanged) and `splits.abi`, `assembleDebug`/`assembleRelease`/`checkApkSize` all pass |
+| ~~`:app-android` compiled~~ → **DONE 2026-10-03** | Was "no Android SDK on this machine". An SDK is now installed (`local.properties` `sdk.dir=/home/leo/.sdk`) and the module compiles and packages. **The one-character root cause was `app-android/build.gradle.kts` line 1 starting with `#`** — a Groovy comment marker, parsed as source by the Kotlin script compiler. With that fixed, plus `compileSdk` 34→35 (an androidx `minCompileSdk` requirement, `minSdk 26`/`targetSdk 34` unchanged), `assembleDebug`/`assembleRelease`/`checkApkSize`/`bundleRelease`/`:app-android:test` all pass. ⚠️ **`splits.abi` is mentioned in the original version of this row and has since been REMOVED** — it was the cause of the bundling failure, and it is gone |
 | **`:app-android` on a device** | **Still not done, and this is the real remaining gap.** No `adb` on `PATH`, no handset. `scripts/airplane_install_test.sh` reaches step D and stops. NFR-S1's *installable-offline* half, NFR-R1's 50 crash-free runs and SPEC §6 M1 have no exit |
-| **A `.aab` / Play Store bundle** | ⛔ **Not produced, and currently not producible.** `bundleRelease` fails on AGP 8.9.2 with `splits.abi` enabled (`buildReleasePreBundle` → `Sequence contains more than one matching element`, reproduced with `isUniversalApk` both false and true). The alternative — drop splits, keep bundling — returns the release artefact to **77.53 MB**, over the 35 MB budget, and `x86_64` alone is 35.95 MB. **Delivery is APK-only until AGP is upgraded.** CI step 8 was changed to delegate to `checkApkSize` |
-| **`:app-android:test`** | ⛔ **Broken since `06bd654`, unrelated to the build fixes.** 160 compile errors: `ml/BlazeFaceDesktopParityTest.kt` (150) and `ml/BlazeFaceInputTest.kt` (10) import `:platform`'s JVM classes from an Android test source set. `verify-offline.sh` covers both suites on a bare JVM |
+| ~~**A `.aab` / Play Store bundle**~~ | ✅ **PRODUCED 2026-10-03. This row used to say "Not produced, and currently not producible … Delivery is APK-only until AGP is upgraded."** The resolution was the one that was rejected then: **drop the splits, keep bundling** — because the 77.53 MB figure that made it look like a trade was measuring the wrong quantity (a container's file size, not a download). The universal release APK is indeed 77.55 MB on disk, but the budget is applied to the **compressed worst-case per-device slice**, and the `.aab`'s worst slice is **14.60 MB** against 35.0. So there was no trade: bundle-first, 20.40 MB of headroom, and `x86_64` is back, so the app installs on an emulator again. `bundleRelease` is BUILD SUCCESSFUL, CI's size step gates the `.aab`, and a scoped `sideload` build type supplies the one-ABI APK the splits used to provide. **Still true and still unmet: no `.aab` has been uploaded to Play, and `release` is unsigned until `scripts/provision.sh` supplies a config** |
+| ~~**`:app-android:test`**~~ | ✅ **GREEN 2026-10-03.** This row said `⛔ Broken since 06bd654 … 160 compile errors` because `ml/BlazeFaceDesktopParityTest.kt` (150) and `ml/BlazeFaceInputTest.kt` (10) import `:platform`'s JVM classes from an Android test source set, which cannot see them. **Both files were moved to `platform/src/jvmTest/kotlin/dev/kasoti/android/ml/`**, so the defect is fixed at its cause rather than stubbed around: `sh gradlew :app-android:test` is BUILD SUCCESSFUL, 426 executions / 142 unique tests per build-type variant (20 suites × debug/release/sideload). `verify-offline.sh` still runs both suites on a bare JVM (204/204), so the parity assertions are covered twice |
 | Android/desktop inference parity | Needs both halves. The decode is proven bit-identical between two *implementations*; device parity is unproven. |
 | Any real macro or face data | Needs physical documents, the clip, and consented capture. Longest lead time in the project. |
 | A face embedder | Licensing wall — see §4.3. |
@@ -326,12 +357,17 @@ something about where the risk is.
    do not produce exactly those results, stop and find out why before changing anything.
 2. Read `docs/STATUS.md` §7 — it names the next five tasks in order.
 3. ~~**Install the Android SDK and run `:app-android:assembleDebug`.**~~ **Done 2026-10-03** —
-   the SDK is installed and the module builds; the one-character root cause is in §5. **The
-   remaining Android work is smaller and harder: put an APK on a real handset in airplane mode**
-   (`scripts/airplane_install_test.sh --skip-bundle` already walks to step D and stops at
-   "adb not on PATH"), **fix `:app-android:test`** (160 compile errors), and **decide what
-   "delivery" means with no `.aab`** — APK-only is fine for a USB demo and not fine for Play.
-   Until one of those happens, "the field app works" is still a claim.
+   the SDK is installed and the module builds, bundles and passes its own unit tests; the
+   one-character root cause is in §5. **The remaining Android work is smaller and harder: put the
+   `sideload` APK on a real handset in airplane mode** (`scripts/airplane_install_test.sh
+   --skip-bundle` already walks to step D and stops at "adb not on PATH"), and **publish the
+   `.aab` to Play** — `bundleRelease` produces it and the size gate is green, but no `.aab` has
+   ever been uploaded and `release` is unsigned until `scripts/provision.sh` supplies a config.
+   ⚠️ **Two of the three sub-tasks this paragraph listed on 2026-10-03 are already done** — "fix
+   `:app-android:test` (160 compile errors)" is closed, and "decide what delivery means with no
+   `.aab`" is closed: delivery is bundle-first, because the split-APK configuration that made
+   bundling impossible has been removed. Until the handset run happens, "the field app works" is
+   still a claim.
 4. **Start the macro capture.** It needs documents, the clip and consent, and nothing else
    unblocks the macro layer. The collector (`dev.kasoti.platform.collector.MacroCollector`)
    writes DATA.md §3's exact layout and is ready to use.
@@ -352,14 +388,20 @@ something about where the risk is.
   halves are false and were corrected on 2026-09-30.** Measured: `git remote -v` →
   `origin https://github.com/Leo-Expose/Kasoti.git`; `git branch -vv` → `* main 9a04f40
   [origin/main]`; `git rev-list --left-right --count main...origin/main` → `0  0`.
-- **CI has run — twice — and both runs failed**, so "no green run" is the accurate statement,
-  not "no run". `gh run list`: run `36663026772` on `9a04f40` (2026-09-30T03:08:03Z, 26 s) and
-  run `36658909646` on `06bd654` (2026-09-30T02:14:22Z, 36 s), both `conclusion: failure`. Both
-  died at the **first** step (`:core:jvmTest`) with `./gradlew: Permission denied` →
-  `##[error]Process completed with exit code 126.` **No Kotlin code has ever been compiled on CI.**
-  Cause is the exec bit: git records all 340 tracked files as `100644` (R-Q), so on a fresh Linux
-  runner `gradlew` is not executable. Reproduced locally on a real `git clone` on 2026-09-30.
-  **This is the cheapest high-value fix in the project.**
+- ⚠️ **CORRECTED 2026-10-03: this said "CI has run — twice — and both runs failed, so 'no green
+  run' is the accurate statement, not 'no run' … **No Kotlin code has ever been compiled on
+  CI.** … This is the cheapest high-value fix in the project."** All of that was accurate on
+  2026-09-30 and all of it is now history. `gh run list --limit 8` today: `36658909646` and
+  `36663026772` (both 2026-09-30) failed at the **first** step (`:core:jvmTest`) with
+  `./gradlew: Permission denied` → **exit 126** — cause was the exec bit, fixed by `df6d309`
+  (`git ls-files -s gradlew` → `100755` today). Then two runs failed on **real** gates:
+  `37090379579` (16m16s) on `GATE: Android APKs built + per-ABI size check`, `37110497967` (2m43s)
+  on `PROOF: the magic-threshold gate exits non-zero on an injected literal`. And then
+  **`37112766189` on `f6a0540` SUCCEEDED in 8m25s.** Kotlin is now compiled and gated on CI, and
+  the two hard gates (magic thresholds, PII scrubber) are machine-enforced. **What still is not
+  enforced:** `ktlint`/`detekt` are `continue-on-error` and still red, the weekly `offline-proof`
+  job is not a real proof (R-K), and no `.aab` has been uploaded to Play nor any build run on a
+  device.
 - The repository sits on an **exFAT volume that ignores `chmod`** (every file reports 755 locally
   regardless of intent). `scripts/provision.sh` verifies the mode of a written secret and warns
   loudly rather than assuming. Treat 0600 on this filesystem as not-enforced — and treat the

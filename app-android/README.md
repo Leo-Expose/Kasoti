@@ -28,12 +28,19 @@ that line. Nothing about the module's code, resources, manifest or dependencies 
 - **There is no `sideloadApk` that has ever been installed.** The task exists and builds a
   one-ABI, debug-key-signed APK for exactly this purpose (see §1a), but nothing in this repo has
   pushed one to a handset, so the run half of the claim is still unmade.
-- **There is no unit-test coverage for the capture/ML path at the Android layer.**
-  `:app-android:test` does not compile — 160 errors, all in
+- ⚠️ **CORRECTED 2026-10-03: this used to read "There is no unit-test coverage for the
+  capture/ML path at the Android layer. `:app-android:test` does not compile — 160 errors, all in
   `src/test/java/dev/kasoti/android/ml/BlazeFaceDesktopParityTest.kt` (150) and
-  `…/ml/BlazeFaceInputTest.kt` (10), which import `:platform`'s **JVM** classes that the Android
-  variant cannot see. Pre-existing since commit `06bd654`, and covered instead by
-  `app-android/tools/verify-offline.sh` on a bare JVM.
+  `…/ml/BlazeFaceInputTest.kt` (10)".** That defect is **fixed**: both files were **moved** to
+  `platform/src/jvmTest/kotlin/dev/kasoti/android/ml/`, where `:platform`'s **JVM** classes are
+  visible, and `sh gradlew :app-android:test` is BUILD SUCCESSFUL — 20 suites, **142 unique tests
+  per build-type variant** (426 executions across debug/release/sideload), 0 failures. What is
+  **still** true and is what this bullet now means: the two parity suites are **Android-module
+  tests that live in `:platform`**, so they are no longer counted as `:app-android` coverage, and
+  the **capture/ML-path coverage that does live here has still never executed on hardware** —
+  8 test files compile and pass on a JVM, which is not the same claim as the camera, ML Kit or
+  TFLite paths having run. `app-android/tools/verify-offline.sh` still runs all of them on a bare
+  JVM (204/204).
 
 ### 1a. Getting an APK onto a real handset
 
@@ -136,9 +143,11 @@ sh gradlew :app-android:assembleRelease          # 1 universal APK: -unsigned.ap
 sh gradlew :app-android:bundleRelease            # OK -> app-android-release.aab (36.97 MB). THE PRODUCT.
 sh gradlew :app-android:sideloadApk              # 1-ABI sideload APK, arm64-v8a, 23.01 MB
                                                 #   (LOCAL TESTING ONLY — see §1a)
-sh gradlew :app-android:checkApkSize             # NFR-S1 gate: 4 containers, all within budget
+sh gradlew :app-android:checkApkSize             # NFR-S1 gate: 4 containers; gates the worst
+                                                #   per-device SLICE, not the file size
 sh gradlew :app-android:lint
-# ⛔ sh gradlew :app-android:testDebugUnitTest   # FAILS — 160 compile errors (see §1)
+sh gradlew :app-android:testDebugUnitTest       # OK — 142 tests (also testReleaseUnitTest and
+                                                #   testSideloadUnitTest: 426 executions total)
 
 # 3. a device (SPEC §10 A2: one low-end 2 GB Android 10+, one mid) — NEVER DONE
 sh gradlew :app-android:installDebug             # no adb, no device: this has never run
@@ -196,7 +205,7 @@ Still open, and not fixable by compiling:
 | Clock & skew | `SkewReportTest` (4) | Beyond the bar is a *warning*, never a block; no reference point is `UNVERIFIED`, which is not the same as agreeing. |
 | Calendar arithmetic | `CalendarArithmeticTest` (4) | The epoch-day inverse round-trips across the range, including leap days. |
 | Quality bridge | `QualityBridgeTest` (6) | The `:core` ⇄ `:ui` round trip is lossless where it decides and lossy only where it must be. |
-| `:ui` presentation | **55** tests | See `ui/README.md`: verdict tones, the GREY-is-not-an-accusation lexicon, the ≤4-step machine, the permission state machine, the reducer. (44 on 2026-09-30.) ⚠️ run by `verify-offline.sh`, **not** by `:ui:test` under an SDK-gated build |
+| `:ui` presentation | **58** tests | See `ui/README.md`: verdict tones, the GREY-is-not-an-accusation lexicon, the ≤4-step machine, the permission state machine, the reducer. (55 earlier on 2026-10-03, 44 on 2026-09-30.) Both `sh gradlew :ui:test` and `verify-offline.sh` run these — `:ui` is **not** SDK-gated, so it is in the build with or without an SDK |
 
 ### What is NOT tested and NOT implemented
 

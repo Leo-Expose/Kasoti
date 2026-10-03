@@ -9,22 +9,34 @@
   dep needs it (goal: none) — **and note the SDK is still optional at configure time**, see §2.
 - Tesseract ≥5.3 + `eng` + `osd` traineddata on desktop dev machines (`apt/brew/choco install tesseract`); tessdata path in `local.properties` (`tess.data=`).
 - One low-end Android test device (2–3 GB RAM, Android 10+) + one mid device. USB debugging on.
-  ⚠️ **CHANGED 2026-10-03: an Android SDK IS now present** (`local.properties` `sdk.dir=`,
-  `ANDROID_HOME=/opt/android-sdk`) and `:app-android` compiles and packages. **Neither *device*
-  has been obtained**, and no `adb` is on `PATH` — so nothing has been installed or run on
-  hardware. See `docs/STATUS.md` R-C.
+  ⚠️ **CHANGED 2026-10-03: an Android SDK IS now present** — `local.properties`
+  `sdk.dir=/home/leo/.sdk`, a writable composite whose `build-tools`/`cmdline-tools`/
+  `platform-tools`/`tools` symlink into the non-writable `/opt/android-sdk` while `licenses/`,
+  `lic.log` and `platforms/{android-34,android-35}` are local — and `:app-android` compiles,
+  packages and **bundles**. ⚠️ **CORRECTED 2026-10-03: this line said `ANDROID_HOME=/opt/android-sdk`.**
+  That env var is **unset** in the measured configuration; the build resolves through `sdk.dir`.
+  **Neither *device* has been obtained**, and no `adb` is on `PATH` — so nothing has been
+  installed or run on hardware. See `docs/STATUS.md` R-C.
 - Disk: ~15 GB (SDK + Gradle). Network needed ONLY for first dependency fetch; after that,
   airplane-build must succeed. The `ci.yml` `offline-proof` job attempts this weekly with
-  `--offline`, and it **has never run** — and it is warm-cache only (STATUS R-K). For the record,
-  the other CI job (`verify`) **has** run, twice, and failed both times at the first step on
-  `./gradlew: Permission denied`; see §3a and STATUS R-J.
+  `--offline`, and it **has never run** — and it is warm-cache only (STATUS R-K). ⚠️
+  **CORRECTED 2026-10-03: the sentence that followed said the other CI job (`verify`) "has run,
+  twice, and failed both times at the first step on `./gradlew: Permission denied`."** Seven runs
+  have happened now. **One is green — `37112766189` on `f6a0540`, 8m25s — and HEAD is not**:
+  `37124132380` on `a0f5a45` finished **red** at `GATE: bundle manifest integrity (invariant I12 /
+  AT-12 model swap)`, which is blocked by the 2 unpopulated `scripts/bundle_manifest.sample.txt`
+  placeholder hashes. The two oldest runs (`36658909646`, `36663026772`, both 2026-09-30) did die
+  at the first step on exit 126, and that cause is fixed (`df6d309` committed the exec bit). Two
+  later runs failed on **real** gates — `37090379579` on the Android size gate and `37110497967`
+  on the magic-threshold negative test. See §3a and STATUS R-J.
 
 Tested-matrix (append your row):
 | OS | JDK | outcome | date | commit |
 |---|---|---|---|---|
 | Ubuntu 24.04, Temurin 17.0.20.1, **no Android SDK** | 17.0.20.1 | **691 Gradle tests, 0 failures** · `:core:jvmTest` 302/0 · `:platform:jvmTest` 137/0 · `:app-desktop:test` 169/0 · `:eval:test` 39/0 · `:ui:test` 44/0 · `:app-desktop:installDist` ok + packaged launcher runs · `:app-desktop:run` ok · `:eval:run smoke` 11 pass/1 skip/0 fail (exit 4) · `ktlintCheck` 3 840 findings · `detekt` 1 309 — **superseded by the row below** | 2026-09-30 | `9a04f40` |
 | Ubuntu, fresh `git clone` of the same commit, no Android SDK | 17.0.20.1 | **`sh gradlew` → `BUILD SUCCESSFUL`, 691 tests, 0 failures, 1 skipped** (self-skip: detector `.tflite` is git-ignored; `sh scripts/fetch_models.sh` then runs it). **`./gradlew` → `permission denied`** (§3a) — **test counts superseded by the row below** | 2026-09-30 | `9a04f40` |
-| **Ubuntu 24.04, Temurin 17.0.20.1, Android SDK present** (`local.properties` `sdk.dir=`, `ANDROID_HOME=/opt/android-sdk`) | 17.0.20.1 | **896 Gradle tests, 0 failures, 0 skipped** · `:core:jvmTest` **459**/0 · `:platform:jvmTest` 137/0 · `:app-desktop:test` **206**/0 · `:eval:test` 39/0 · `:ui:test` **55**/0 — `sh gradlew … --rerun-tasks`, 20 tasks executed · `:app-desktop:installDist` ok, packaged launcher runs, model reported *"(shipped inside this installation)"* · **`:app-android:assembleDebug` ok — 2 APKs, arm64-v8a 33.39 MB / armeabi-v7a 26.56 MB** · **`:app-android:assembleRelease` ok — 22.97 MB / 16.14 MB** · **`:app-android:checkApkSize` ok — 4 artefacts, all within the 35.0 MB budget** · **`app-android/tools/verify-offline.sh` exit 0, 201/201** · `scripts/check_no_network_in_core.sh` green over **93** files · **`scripts/pii_scrubber_test.sh` exit 0, 7 suites / 111 tests** · `scripts/check_no_magic_thresholds.sh` red, **175** lines · `ktlintCheck --continue` **4 267** · `detekt` **1 349** · **`:app-android:bundleRelease` FAILS (no `.aab`)** · **`:app-android:test` FAILS, 160 compile errors** · `scripts/airplane_install_test.sh` exit 1 (bundle-manifest placeholders) | **2026-10-03** | **`9a04f40` + dirty working tree** |
+| **Ubuntu 24.04, Temurin 17.0.20.1, Android SDK present** (`local.properties` `sdk.dir=/home/leo/.sdk`) | 17.0.20.1 | **917 Gradle tests across the five non-Android modules, 0 failures, 0 skipped** · `:core:jvmTest` **459**/0 · `:ui:test` **58**/0 · `:platform:jvmTest` **155**/0 · `:app-desktop:test` **206**/0 · `:eval:test` 39/0 — one command, `sh gradlew :core:jvmTest :ui:test :platform:jvmTest :app-desktop:test :eval:test --rerun-tasks` · **plus `:app-android:test` ok — 426 executions / 142 unique per build-type variant** (20 suites × debug/release/sideload), so **1 343 executions** across all six modules · `:app-desktop:installDist` ok, packaged launcher runs, model reported *"(shipped inside this installation)"* · **`:app-android:assembleDebug` ok — 1 universal APK, 88.72 MB** · **`:app-android:assembleRelease` ok — 1 universal APK, 77.55 MB** · **`:app-android:bundleRelease` ok — `app-android-release.aab`, 36.97 MB (38 764 190 B), THE PRODUCT** · **`:app-android:sideloadApk` ok — 1-ABI APK, 23.01 MB arm64-v8a / 16.18 MB armeabi-v7a** · **`:app-android:checkApkSize` exit 0 — 4 containers, gating the compressed worst-case per-device slice: `.aab` 14.60 · release APK 25.52 · sideload APK 22.91 · debug APK 35.90 (ADVISORY, 0.90 over)** · **`app-android/tools/verify-offline.sh` exit 0, 204/204** · `scripts/check_no_network_in_core.sh` green over **99** files · **`scripts/pii_scrubber_test.sh` exit 0, 7 suites / 111 tests** · `scripts/check_no_magic_thresholds.sh` **exit 0, 69 files, 0 findings** · `ktlintCheck --continue --rerun-tasks` **5 683** · `detekt --continue` **1 497** · `scripts/airplane_install_test.sh` exit 1 (bundle-manifest placeholders) | **2026-10-03** | **`a0f5a45` + dirty working tree** |
+| **CI (GitHub Actions, `ubuntu-latest`)** | Temurin 17 (setup-java) | ⚠️ **has gone green ONCE; HEAD is red.** ✅ `37112766189` on `f6a0540` **success, 8m25s** — `gh run view` shows the Android size gate reporting `bundle/app-android-release.aab container = 36.97 MB … worst per-device slice = 14.60 MB at x86 … within budget`, the magic-threshold step `PASS — 69 file(s) scanned, 0 unregistered literals, 14 registry-declared structural exemptions`, and the PII step `PASS — 7 suite(s) reported, 111 test(s) executed, all green`. ❌ `37124132380` on `a0f5a45` (HEAD) **failure, 7m54s** — cleared 16 steps then failed at `GATE: bundle manifest integrity (invariant I12 / AT-12 model swap)` on the 2 unpopulated `bundle_manifest.sample.txt` hashes. Two earlier runs died at step 1 on exit 126 (exec bit, since fixed by `df6d309`); two more failed on **real** gates (`37090379579` size, `37110497967` magic-threshold negtest). **No `.aab` has been uploaded to Play and nothing has run on a device** | 2026-10-03 | `f6a0540` green · `a0f5a45` red |
 | — | — | `:app-android` on a **device** | never run — no `adb` on PATH, no handset. Compilation is not execution | — |
 
 ## 2. Scaffold (done)
@@ -39,7 +51,7 @@ the file does not exist (STATUS R-H).
 (`local.properties` → `sdk.dir=`, or `ANDROID_HOME`/`ANDROID_SDK_ROOT`). On a machine with no
 SDK `:app-android` is not in the build at all, so `:core:jvmTest` and `:eval:run` stay runnable.
 ⚠️ **The gate is still real, but as of 2026-10-03 an SDK *is* present on the dev box**
-(`local.properties` `sdk.dir=`, `ANDROID_HOME`/`ANDROID_SDK_ROOT` = `/opt/android-sdk`), so
+(`local.properties` `sdk.dir=/home/leo/.sdk`), so
 `sh gradlew projects` lists **all six** projects and `:app-android` compiles and packages. The gate
 still does what it is for — it is what lets CI runners and desktop-only machines skip the module
 without an "SDK location not found" failure. **`:ui` is not gated** — it is plain `kotlin-jvm` and
@@ -56,38 +68,51 @@ dirty working tree) **with an Android SDK present**; rows not re-run are labelle
 `docs/STATUS.md` §1 has the full results with provenance, §0 has the reviewer-facing table.
 ⚠️ Use `--rerun-tasks`, not `--rerun` — see the note below the block.
 
-### 3a. ⚠️ Read this first: on a fresh clone, type `sh gradlew`, not `./gradlew`
+### 3a. `sh gradlew` is the habit; `./gradlew` works again as of 2026-10-03
 
-Git records **all 340 tracked files as mode `100644`** — including `gradlew` and every
-`scripts/*.sh` — because this repository is authored on an **exFAT** volume that cannot hold the
-exec bit (R-Q). Your working tree looks fine; a fresh clone does not:
+⚠️ **CORRECTED 2026-10-03. This section used to be titled "⚠️ Read this first: on a fresh clone,
+type `sh gradlew`, not `./gradlew`" and opened "Git records **all 340 tracked files as mode
+`100644` — including `gradlew` and every `scripts/*.sh`**", with a transcript showing
+`340 100644 # not one 100755` and `./gradlew: Permission denied`.** That was measured on
+2026-09-30 and was true then. Commit `df6d309` committed the mode bit, and it is measured now:
 
 ```
 $ git ls-files -s | awk '{print $1}' | sort | uniq -c
-      340 100644          # not one 100755
-$ ls -l gradlew           # in a fresh clone
--rw-r--r-- 1 runner runner 8733 gradlew
-$ ./gradlew --version
-bash: ./gradlew: Permission denied
+      466 100644
+        9 100755          # gradlew + 8 scripts
+$ git ls-files -s gradlew
+100755 23d15a9367071145e9c79bb4ddf879d1fbe78b5d 0   gradlew
+$ ./gradlew --version        # works
 ```
 
-So on a clean checkout, use `sh gradlew …` and `sh scripts/<name>.sh …`, or run
-`git update-index --chmod=+x gradlew scripts/*.sh app-android/tools/*.sh` once first. This is
-also what broke CI: both recorded runs died with `./gradlew: Permission denied` (exit 126) at the
-very first step (`docs/STATUS.md` R-J). Everything below is written as `sh gradlew` for that
-reason; substitute `./gradlew` freely once the exec bit is committed.
+**So `./gradlew …` is fine on a fresh clone.** Two exceptions: `app-android/tools/verify-offline.sh`
+and `scripts/ci_bundle_manifest_gate.sh` are still committed `100644`, so invoke those as
+`sh <script>`. And this whole doc set still writes `sh gradlew` everywhere — that is now habit,
+not necessity, and it costs nothing.
+
+**The cause is unfixed and will recur.** This repository is authored on an **exFAT** volume that
+cannot hold the exec bit (R-Q), which is why the working tree *always* looks right
+(`-rwxr-xr-x`) and the defect was invisible until CI failed. **Run `git ls-files -s` before pushing
+any new script, or it lands `100644` and breaks a runner the same way.** For the record, this is
+what broke CI: the two oldest runs (`36658909646`, `36663026772`, both 2026-09-30) died with
+`./gradlew: Permission denied` (exit 126) at the very first step (`docs/STATUS.md` R-J).
 
 ```bash
 # core + eval (no device, no SDK needed) — ALL VERIFIED WORKING
 sh gradlew :core:jvmTest                        # 459 tests, 0 failures
 sh gradlew :core:allTests                       # = :core:jvmTest; JVM is the only target
-sh gradlew :ui:test                             # 55 tests  (not SDK-gated)
-sh gradlew :platform:jvmTest                    # 137 tests
+sh gradlew :ui:test                             # 58 tests  (not SDK-gated)
+sh gradlew :platform:jvmTest                    # 155 tests
 sh gradlew :app-desktop:test                    # 206 tests
 sh gradlew :eval:test                           # 39 tests
-# all five together: 896 tests, 0 failures, 0 skipped. Counts measured 2026-10-03 with
-#   sh gradlew :core:jvmTest :ui:test :platform:jvmTest :app-desktop:test :eval:test --rerun-tasks
-#   and read from <module>/build/test-results/**/TEST-*.xml. 20 tasks, all executed.
+sh gradlew :app-android:test                    # 426 EXECUTIONS = 142 unique tests x 3
+                                                #   build-type variants. Quote 142, not 426.
+# all six together: 917 tests in the five non-Android modules (+ 426 app-android
+#   executions = 1 343 executions overall), 0 failures, 0 skipped. Measured 2026-10-03
+#   at a0f5a45 with ONE command, BUILD SUCCESSFUL in 2m21s, 132 tasks all executed:
+#   sh gradlew :core:jvmTest :ui:test :platform:jvmTest :app-desktop:test :eval:test \
+#            :app-android:test --rerun-tasks
+#   and read from <module>/build/test-results/**/TEST-*.xml.
 sh gradlew :app-desktop:run                     # headless text console; prints usage, exit 0
 sh gradlew :eval:run --args="smoke"             # 11 pass / 1 skip. EXITS 4, not 0
 sh gradlew :eval:run --args="full"              # 13 pass / 6 skip. EXITS 4, not 0
@@ -96,9 +121,11 @@ sh gradlew :eval:run --args="parity"            # 1 gate, skipped, no device. EX
 #    Cite the run id you actually produced; see docs/STATUS.md §3 and §4.7.
 
 # lint — BOTH TASKS EXIST AND BOTH ARE RED. Advisory, detached from `check`. See STATUS §4.3.
-sh gradlew ktlintCheck --continue               # exit 1 — 4 267 violations (WITHOUT
-                                                #   --continue it under-reports: 3 130)
-sh gradlew detekt                               # exit 1 — 1 349 weighted issues
+sh gradlew ktlintCheck --continue --rerun-tasks  # exit 1 — 5 683 findings in 51 Check tasks,
+                                                #   15 failing (WITHOUT --continue it badly
+                                                #   under-reports: CI's bare run printed 1 689)
+sh gradlew detekt --continue                    # exit 1 — 1 497 weighted issues, 6/6 modules
+                                                #   fail (1 250 excluding :app-android)
 
 # desktop distribution — WORKS. The old task name below was wrong, not the capability.
 sh gradlew :app-desktop:installDist             # -> app-desktop/build/install/kasoti/
@@ -120,14 +147,17 @@ sh gradlew :app-android:sideloadApk             # ONE-ABI sideload APK, arm64-v8
 sh gradlew :app-android:sideloadApk -Pkasoti.sideloadAbi=armeabi-v7a   # 16.18 MB instead
 sh gradlew :app-android:checkApkSize            # the 35 MB gate; 4 containers, all within budget
 sh gradlew :app-android:installDebug            # needs a DEVICE; none has ever been attached
-# ⛔ sh gradlew :app-android:test               # FAILS: 160 compile errors, all in
-#                                               #   ml/BlazeFaceDesktopParityTest.kt (150) and
-#                                               #   ml/BlazeFaceInputTest.kt (10), which import
-#                                               #   :platform's JVM classes. Pre-existing since
-#                                               #   06bd654. verify-offline.sh covers those suites.
+sh gradlew :app-android:test                    # OK — 426 executions / 142 unique tests per
+                                               #   build-type variant (20 suites x debug/
+                                               #   release/sideload), 0 failures. The two
+                                               #   ml/BlazeFace*.kt suites MOVED to
+                                               #   platform/src/jvmTest/kotlin/dev/kasoti/
+                                               #   android/ml/, where :platform's JVM classes
+                                               #   are visible, so the old 160 compile errors
+                                               #   are gone. verify-offline.sh still runs them.
 
 # offline proof
-sh app-android/tools/verify-offline.sh          # exit 0 — 201/201, no SDK needed
+sh app-android/tools/verify-offline.sh          # exit 0 — 204/204, no SDK needed
 sh scripts/airplane_install_test.sh             # exit 1 — see the note below; the reason is NOT
                                                  #   the bundle hashes any more
 sh scripts/airplane_install_test.sh --skip-bundle  # exit 2 (INCOMPLETE) — reaches step D, no adb
@@ -138,8 +168,11 @@ re-runs only the **last** task on the line and leaves the rest `UP-TO-DATE`, so 
 reports a stale result for four of the five modules. Measured 2026-10-03: `--rerun` re-ran
 `:eval:test` only (the other four printed `UP-TO-DATE`); `--rerun-tasks` executed all 20 tasks.
 
-⚠️ **`ktlintCheck` needs `--continue`.** Without it Gradle stops at the first failing task and
-prints 3 130 of 4 267 violations. With `--continue`, all 35 ktlint Check tasks run and 12 fail.
+⚠️ **`ktlintCheck` needs `--continue`.** Without it Gradle stops at the first failing task, and
+the same tree prints 3 130 (or 1 689 in CI's bare invocation) against **5 683**. With
+`--continue --rerun-tasks`, all 51 ktlint Check tasks run and 15 fail. ⚠️ **the totals also depend
+on whether `:app-android` is in `LINTED_MODULES`**: five modules at `a0f5a45`, six in the working
+tree. See `docs/STATUS.md` §4.3.
 
 ### Testing on a real handset — build the sideload APK, not the universal one
 
@@ -332,16 +365,16 @@ obtained**). Full register with sources, digests and provenance states: `THIRD_P
 | Desktop TFLite reports `available = false` on Windows or Apple Silicon | Expected. No upstream native exists for `windows-x86_64` or `osx-aarch64` and a version bump will not create one. That platform is "review-only, no on-device inference" (R-T) |
 | ML Kit downloads at runtime | using unbundled artifact → switch to bundled model dep. The dep **is** the bundled `com.google.mlkit:text-recognition`, so this should not happen — but the airplane test that would catch it has **never run on a device** (it reaches step D and stops: no `adb`). Treat it as uncaught, not as absent |
 | `:app-android:buildReleasePreBundle` → `Sequence contains more than one matching element` | **Historical — this no longer happens.** It was AGP 8.9.2 refusing `splits.abi` + app bundle in the same module (`PerModuleBundleTask.getResourcesFile()` calls `.single()` on the shrunk `.ap_` files, and splits produce one per ABI). `splits.abi` has been removed: there is no such block, `bundleRelease` **succeeds**, and the shipping artefact is `app-android-release.aab` at 36.97 MB / 14.60 MB worst per-device slice. Confirmed present through AGP 8.13.2, so **do not re-enable splits and do not upgrade AGP to chase it**. If you ever see this error again, something has typed `splits { abi { … } }` back into `app-android/build.gradle.kts` — read the split-ABI ADR there. The one-ABI APK the splits used to provide is now the `sideload` build type, which is scoped and does not break bundling |
-| `:app-android:test` → 160 compile errors in `ml/BlazeFace*.kt` | Those two files import `:platform`'s **JVM** classes (`dev.kasoti.platform.*`, `BlazeFaceAnchors`, `RgbImage`, `ImageIoImaging`) from an **Android** test source set, which cannot see them. Pre-existing since `06bd654`. `app-android/tools/verify-offline.sh` compiles and runs exactly these suites on a bare JVM (201/201), so the assertions are covered — by the script, not by Gradle |
+| `:app-android:test` → 160 compile errors in `ml/BlazeFace*.kt` | **Historical — this no longer happens, and this row used to say so was still open.** The two files imported `:platform`'s **JVM** classes (`dev.kasoti.platform.*`, `BlazeFaceAnchors`, `RgbImage`, `ImageIoImaging`) from an **Android** test source set, which cannot see them (pre-existing since `06bd654`). **Both files were moved to `platform/src/jvmTest/kotlin/dev/kasoti/android/ml/`**, and `:app-android:test` is BUILD SUCCESSFUL: 426 executions / 142 unique tests per build-type variant. `app-android/src/test/java/dev/kasoti/android/ml/` now holds only `BlazeFaceDecoderTest.kt`. The parity assertions are now covered **twice** — by Gradle and by `app-android/tools/verify-offline.sh` (204/204) on a bare JVM. If you see the old error again, someone re-created a `:platform` JVM import inside the Android test source set; the fix is to move the suite, not to stub the classes |
 | A `scripts/*.sh` fails with a bare `What went wrong: 27` | `JAVA_HOME` is not set, so Gradle ran on the default JDK 27. `export JAVA_HOME=/usr/lib/jvm/java-17-openjdk` and re-run. Measured 2026-10-03: `sh scripts/pii_scrubber_test.sh` fails this way without it and exits 0 with it |
-| `ktlintCheck` reports far fewer violations than expected | You omitted `--continue`. Gradle stops at the first failing task: 3 130 instead of 4 267 (measured 2026-10-03). Also note a `…/src/`-scoped count misses the 9 violations in `.kts` build scripts |
+| `ktlintCheck` reports far fewer violations than expected | You omitted `--continue`. Gradle stops at the first failing task, so the same tree reads 1 689 (CI's bare invocation) or 3 130 (no `--continue`) against **5 683** measured as `sh gradlew ktlintCheck --continue --rerun-tasks` on 2026-10-03. Also note a `…/src/`-scoped grep misses the violations in `.kts` build scripts, and `:app-android`'s depend on whether `LINTED_MODULES` includes it |
 | Tess4J can't find libtesseract | install system tesseract + set `jna.library.path`/PATH; verify `tesseract --version` |
 | Colors differ phone-vs-desktop macro | run calibration card routine (DATA.md §5); never eyeball-tune thresholds. Without it, the harness **refuses** macro metrics (EVAL.md §7) |
 | Diary merge dupes | same device-id on two phones → re-provision device id (SYNC.md §6) |
 | Gradle OOM | `org.gradle.jvmargs=-Xmx4g` in `gradle.properties` |
 | `:eval:run` exits 4 and CI goes red | Expected without a device (see §3). A skipped suite is a first-class state, never a pass |
 | `./gradlew: Permission denied`, or `exit code 126` from CI | **The exec bit is not committed.** Git records all 340 tracked files as `100644` (exFAT authoring volume, R-Q), so on any fresh clone `gradlew` and every `scripts/*.sh` are non-executable. Locally the tree always looks right, which is why this hides. Use `sh gradlew …` / `sh scripts/<name>.sh …`, or fix it properly with `git update-index --chmod=+x gradlew scripts/*.sh app-android/tools/*.sh` on a non-exFAT filesystem. **This is why both CI runs are red** (R-J) |
-| `ktlintCheck` / `detekt` **fail with style findings** | Expected. Both tasks **exist** and are wired to `:core :platform :app-desktop :eval :ui` with 5-line ADRs in the root `build.gradle.kts`; every Gradle run prints a banner saying so. **`:app-android` is deliberately NOT in the linted list**, so its 32 Kotlin files are unlinted. They are red on day one — **4 267 ktlint violations** (`sh gradlew ktlintCheck --continue`) and **1 349 detekt weighted issues**, of which **1 004 are `MagicNumber`** — and are deliberately **detached from `check`** so they report without blocking. A previous revision of this table said "Neither plugin is wired" and "Task not found"; that was false at commit `9a04f40`. NFR-M1 ("detekt+ktlint clean") is genuinely unmet. Clearing it is the `TODO(M2,@build)` in `AGENTS.md` §1; do **not** reach green by disabling a rule or committing a baseline. ⚠️ `fusion/thresholds.v1.json` **now exists** (49 thresholds, §R-O) but is **untracked**, and detekt's `MagicNumber` count rose rather than fell — the registry was the diagnosis, not yet the cure |
+| `ktlintCheck` / `detekt` **fail with style findings** | Expected. Both tasks **exist** and are wired with 5-line ADRs in the root `build.gradle.kts`; every Gradle run prints a banner saying so. At committed `a0f5a45` that list is `:core :platform :app-desktop :eval :ui`, so **`:app-android` is NOT linted** — but ⚠️ **in the working tree another agent has an uncommitted `build.gradle.kts` change adding it**, so a lint total quoted without saying which tree it came from is ambiguous; the build script says so in its own header, and the Gradle banner prints the module list. They are red on day one — **5 683 ktlint findings** (`sh gradlew ktlintCheck --continue --rerun-tasks`) and **1 497 detekt weighted issues** (**997** of them `MagicNumber`) — and are deliberately **detached from `check`** so they report without blocking. A previous revision of this table said "Neither plugin is wired" and "Task not found"; that was false at commit `9a04f40`. NFR-M1 ("detekt+ktlint clean") is genuinely unmet. Clearing it is the `TODO(M2,@build)` in `AGENTS.md` §1; do **not** reach green by disabling a rule or committing a baseline. ⚠️ `fusion/thresholds.v1.json` **now exists** (49 thresholds, §R-O) but is **untracked**, and detekt's `MagicNumber` count FELL 1 004 → 997 once the enum stopped holding numbers — the registry is the cure for `:core`, and the residue is the triage that is still not done |
 | Every Gradle run prints "Kotlin Gradle plugin was loaded multiple times" | `:app-desktop`, `:core` and `:eval` each pin the version explicitly. Harmless today; remove the explicit versions and put the plugin on the root with `apply false` when convenient (R-M) |
 | "the model did not load" in the desktop console | The console's model lookup is repo-relative (`SvmModelFile.DEFAULT_PATH`). `app-desktop/build.gradle.kts` sets `workingDir = rootProject.projectDir` for exactly this; a `java -jar` launch without that working directory reproduces the bug |
 | TFLite throws a shape error on the first device run | Nearly always a destination whose shape does not match the tensor. `regressors` is `[1, 896, 16]` and `classificators` is `[1, 896, 1]`, **with the leading batch dimension** — a `[896, 16]` destination is rejected even though the element count matches, and an extra nesting level infers as `[1, 896, 16, 1]` and is also rejected. `TfliteFaceDetector.verifyShapes` checks this before the first inference and is the thing to read |

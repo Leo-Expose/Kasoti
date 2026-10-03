@@ -1,5 +1,7 @@
 package dev.kasoti.android.ml
 
+import kotlin.math.exp
+import kotlin.math.ln
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -7,8 +9,6 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlin.math.exp
-import kotlin.math.ln
 
 /**
  * The decode arithmetic on its own: no model, no device, no bytes from anywhere.

@@ -49,11 +49,12 @@ git clone https://github.com/Leo-Expose/Kasoti.git && cd Kasoti
 # ⚠️ On a fresh clone use `sh gradlew`, NOT `./gradlew` — see the note below. Every
 #    tracked file is committed mode 100644, so ./gradlew returns "permission denied".
 sh gradlew :core:jvmTest                # 459 tests, 0 failures
-sh gradlew :ui:test                     # 55 tests
+sh gradlew :ui:test                     # 58 tests (55 earlier on 2026-10-03; 44 on 2026-09-30)
 sh gradlew :platform:jvmTest            # 137 tests
 sh gradlew :app-desktop:test            # 206 tests
 sh gradlew :eval:test                   # 39 tests
-# → 896 tests, 0 failures. Re-measured 2026-10-03 in the source checkout with
+# → 917 tests, 0 failures (+ :app-android:test at 426 executions / 142 unique).
+#   Re-measured 2026-10-03 at a0f5a45 in the source checkout with
 #   sh gradlew :core:jvmTest :ui:test :platform:jvmTest :app-desktop:test :eval:test --rerun-tasks
 #   (20 tasks, all executed). ⚠️ use --rerun-tasks, not --rerun: a trailing --rerun re-runs
 #   only the last task and leaves the other four UP-TO-DATE.
@@ -63,13 +64,16 @@ sh gradlew :app-desktop:installDist     # builds a runnable distribution
 sh gradlew :eval:run --args="smoke"     # 11 pass / 1 skip; EXITS 4, not 0 (see below)
 ```
 
-> **⚠️ `./gradlew` does not work on a fresh clone.** Git records all 340 tracked files — including
-> `gradlew` and every `scripts/*.sh` — as mode `100644`, because the authoring volume is **exFAT**
-> and cannot hold the exec bit. `git ls-files -s | awk '{print $1}' | sort | uniq -c` → `340 100644`.
-> Your working tree will *look* right (`-rwxr-xr-x`); a fresh clone will not. **This is why both
-> CI runs are red** — they died at the first step on `./gradlew: Permission denied`. Use
-> `sh gradlew …`, or fix it properly with `git update-index --chmod=+x gradlew scripts/*.sh`.
-> `docs/STATUS.md` §0 has the full delivery table; R-J and R-Q have the details.
+> **⚠️ CORRECTED 2026-10-03: this note used to say "`./gradlew` does not work on a fresh clone…
+> `340 100644`… **This is why both CI runs are red**".** The exec bit was committed in `df6d309`:
+> `git ls-files -s | awk '{print $1}' | sort | uniq -c` now reads **`466 100644` / `9 100755`**,
+> and `git ls-files -s gradlew` → `100755`, so `./gradlew` runs. Two scripts are still `100644`
+> (`app-android/tools/verify-offline.sh`, `scripts/ci_bundle_manifest_gate.sh`) — invoke those as
+> `sh <script>`. **CI is no longer red on this**: run `37112766189` on `f6a0540` is green (8m25s).
+> The *cause* is not fixed — the authoring volume is **exFAT** and cannot hold the bit, which is
+> why the working tree always looks right and the defect was invisible until CI failed — so **run
+> `git ls-files -s` before pushing any new script.** `docs/STATUS.md` §0 has the full delivery
+> table; R-J and R-Q have the details.
 
 `**Android, as of 2026-10-03.** An SDK **is** installed, so `:app-android` **is** in the build and
 **compiles and packages**:
@@ -77,15 +81,24 @@ sh gradlew :eval:run --args="smoke"     # 11 pass / 1 skip; EXITS 4, not 0 (see 
 ```bash
 sh gradlew :app-android:assembleDebug     # 2 APKs — arm64-v8a 33.39 MB, armeabi-v7a 26.56 MB
 sh gradlew :app-android:assembleRelease   # 2 APKs — arm64-v8a 22.97 MB, armeabi-v7a 16.14 MB
-sh gradlew :app-android:checkApkSize      # the 35 MB gate — 4 artefacts, all within budget
-sh app-android/tools/verify-offline.sh    # exit 0, 201/201 — the SDK-free proof
+sh gradlew :app-android:bundleRelease      # OK -> app-android-release.aab (36.97 MB). THE PRODUCT.
+sh gradlew :app-android:sideloadApk        # OK -> 1-ABI APK, arm64-v8a, 23.01 MB (local only)
+sh gradlew :app-android:test               # OK — 426 executions / 142 unique per build-type variant
+sh gradlew :app-android:checkApkSize       # the 35 MB gate — 4 containers; it gates the compressed
+                                           #   worst-case per-device SLICE, not a file size
+sh app-android/tools/verify-offline.sh     # exit 0, 204/204 — the SDK-free proof
 ```
 
-Three things that were **not** fixed and are stated rather than glossed: **there is no `.aab`** —
-`:app-android:bundleRelease` fails on AGP 8.9.2 once ABI splits are on, so **this build is
-APK-only and cannot produce a Play Store bundle**; **`:app-android:test` does not compile** (160
-errors in two `ml/` test files that import `:platform`'s JVM classes); and **nothing has ever run
-on a device** — no `adb`, no handset — so `installDebug`, the airplane-install proof and NFR-R1's
+⚠️ **CORRECTED 2026-10-03: the paragraph below used to open "Three things that were **not** fixed
+… **there is no `.aab`** … **`:app-android:test` does not compile** (160 errors in two `ml/` test
+files)". Both of those stopped being true the same day** — `bundleRelease` is BUILD SUCCESSFUL
+because `splits.abi` was removed, and `:app-android:test` is green at 142 unique tests per
+build-type variant because the two `ml/` suites moved to `platform/src/jvmTest/`. Kept as a
+correction rather than deleted, because "it was broken and then it was fixed" is the fact a reader
+comparing against an older checkout needs.
+
+Three things that are **still** not fixed, and are stated rather than glossed: **nothing has ever
+run on a device** — no `adb`, no handset — so `installDebug`, the airplane-install proof and NFR-R1's
 50 crash-free runs are all still outstanding. See `docs/STATUS.md` R-C.
 
 **Exit code 4 is correct, not a broken build.** `:eval:run` returns 4 = INCOMPLETE whenever a
@@ -107,8 +120,10 @@ kasoti/
                    model loader, desktop TFLite detector). No androidMain.
   ui/              plain kotlin-jvm presentation state + a FieldView contract.
                    **Not Compose Multiplatform** — see ui/README.md §1
-  app-android/     CameraX field app (lanes). **Compiles and packages since 2026-10-03
-                   (4 APKs, size gate green); never run on a device, no .aab.**
+  app-android/     CameraX field app (lanes). **Compiles, packages and bundles since
+                   2026-10-03** — `bundleRelease` produces the 36.97 MB `.aab` that is the
+                   shipping product, plus a `sideload` build type for a 1-ABI handset APK.
+                   **Never run on a device, and no `.aab` has been uploaded to Play.**
   app-desktop/     headless Post-Console CLI (Linux/Win/Mac; runs from a checkout, and
                    `installDist`/`distZip`/`distTar` build a runnable distribution)
   eval/            harness CLI + fixtures + manifests + runs (no real PII)
@@ -147,7 +162,7 @@ Always in the build: `:core :platform :eval :app-desktop :ui`. SDK-gated: `:app-
 All unchecked, deliberately, and `docs/STATUS.md` §1–§5 is the authority — read it before
 believing any milestone claim.
 
-- [ ] M0 core + harness + clip + first numbers — `:core` and the harness are real (**896 tests
+- [ ] M0 core + harness + clip + first numbers — `:core` and the harness are real (**917 tests
       green across five modules**; `smoke` and `full` both run). **No clip has been built, and
       there are no first numbers**: no D-MACRO media, no calibration, no face embedder.
 - [ ] M1 Android E2E airplane-mode — **partly unblocked 2026-10-03.** `:app-android` now compiles
@@ -192,7 +207,7 @@ codes, no RED/AMBER/GREY logic — `assets/js/` contains none. The verdict panel
 made elsewhere*. A judge watching the page is watching recorded output, not a live decision, and
 it does not decide whether the document you pasted is a forgery. It also does not substitute for
 the hands-on device demonstration the project still owes, because `:app-android` has never been
-**run** — it compiles and packages as of 2026-10-03, but no handset has ever installed it (R-C).
+**run** — it compiles, packages and bundles as of 2026-10-03, but no handset has ever installed it (R-C).
 
 **One deliberate inconsistency:** the recorded transcripts still print `KASOTI screening RED`,
 because they are byte-for-byte captures and editing them would make the panel's "verbatim" claim

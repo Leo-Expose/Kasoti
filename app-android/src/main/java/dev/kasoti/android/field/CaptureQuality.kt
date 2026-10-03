@@ -1,11 +1,11 @@
 package dev.kasoti.android.field
 
-import dev.kasoti.factory.GrayImage
-import dev.kasoti.fusion.FindingCode
-import dev.kasoti.fusion.QualityReport
 import dev.kasoti.face.FaceSample
 import dev.kasoti.face.GateResult
 import dev.kasoti.face.QualityGate
+import dev.kasoti.factory.GrayImage
+import dev.kasoti.fusion.FindingCode
+import dev.kasoti.fusion.QualityReport
 import dev.kasoti.threshold.ThresholdName
 import dev.kasoti.threshold.ThresholdRegistry
 

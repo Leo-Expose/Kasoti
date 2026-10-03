@@ -1,21 +1,11 @@
 package dev.kasoti.android.field
 
-import dev.kasoti.checks.CheckOutcome
-import dev.kasoti.checks.DateLogic
-import dev.kasoti.checks.FormatValidators
-import dev.kasoti.checks.FormatVerdict
-import dev.kasoti.checks.VizMrzMatch
-import dev.kasoti.fusion.DriftScore
-import dev.kasoti.fusion.FindingCode
-import dev.kasoti.fusion.MathEvidence
 import dev.kasoti.mrz.MrzCheck
 import dev.kasoti.mrz.MrzField
 import dev.kasoti.mrz.MrzFormat
 import dev.kasoti.mrz.MrzParser
 import dev.kasoti.mrz.MrzResult
-import dev.kasoti.threshold.ThresholdName
 import dev.kasoti.threshold.ThresholdRegistry
-import dev.kasoti.time.IsoDate
 
 /**
  * What the operator can see and the MRZ says, side by side.

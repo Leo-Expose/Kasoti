@@ -214,7 +214,7 @@ internal object DemoBodies {
                     nameHash = SURESH_HASH,
                 ),
             ),
-        )
+        ),
     )
 
     /**

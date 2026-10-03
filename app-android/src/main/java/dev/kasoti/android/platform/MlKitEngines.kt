@@ -1,16 +1,15 @@
 package dev.kasoti.android.platform
 
 import android.graphics.Bitmap
+import com.google.mlkit.vision.barcode.BarcodeScanner
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.barcode.BarcodeScanner
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.TextRecognizer
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import dev.kasoti.android.field.VizFields
-import dev.kasoti.qr.KeyRing
 import dev.kasoti.qr.QrPayload
 
 /**
@@ -275,6 +274,7 @@ class VizFieldReader {
 
     private companion object {
         val WHITESPACE = Regex("\\s+")
+
         // Label-led extraction only. A bare 12-digit number anywhere on a card is not evidence
         // that the card *is* an Aadhaar; a field labelled as one is.
         val NAME = Regex("(?:name|नाम)\\s*[:：]?\\s*([A-Za-z][A-Za-z .'-]{1,40})")
@@ -304,10 +304,11 @@ class VizFieldReader {
  * `await()` from `kotlinx-coroutines-play-services` is not used: it would add a second
  * Play Services artifact for one extension function. `addOnCompleteListener` needs nothing.
  */
-private suspend fun <T> com.google.android.gms.tasks.Task<T>.awaitCompat(): T = kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
-    addOnCompleteListener { task ->
-        val error = task.exception
-        if (error != null) continuation.resumeWith(Result.failure(error))
-        else continuation.resumeWith(Result.success(task.result))
+private suspend fun <T> com.google.android.gms.tasks.Task<T>.awaitCompat(): T =
+    kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+        addOnCompleteListener { task ->
+            val error = task.exception
+            if (error != null) continuation.resumeWith(Result.failure(error))
+            else continuation.resumeWith(Result.success(task.result))
+        }
     }
-}

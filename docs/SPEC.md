@@ -116,7 +116,7 @@ A1. ~~Team ~6, mixed; Android-strong; ≥1 person owns eval/data full-time in M0
 `solo-founder variant` in `ROADMAP.md` §7 is what is being built rather than a contingency.
 A2. ⚠️ **STILL NOT MET — but for half the original reason, and the change is dated.** It used to
 read "**Zero Android devices and no Android SDK**". ⚠️ **Corrected 2026-10-03: an Android SDK is
-now installed** (`local.properties` `sdk.dir=`, `ANDROID_HOME=/opt/android-sdk`) and
+now installed** (`local.properties` `sdk.dir=/home/leo/.sdk`; `ANDROID_HOME` unset — ⚠️ this used to say `ANDROID_HOME=/opt/android-sdk`) and
 `:app-android` compiles and packages four APKs within the 35 MB budget. **Still zero Android
 devices and no `adb`**, so nothing has been installed or run, and NFR-S1's installable-offline
 half, NFR-R1's 50 crash-free runs and §6 M1 have no exit. The dev host is Linux, so Windows and

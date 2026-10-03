@@ -1,6 +1,5 @@
 package dev.kasoti.android.field
 
-import dev.kasoti.fusion.TrustState
 import dev.kasoti.i18n.Language
 import dev.kasoti.mrz.MrzBuilder
 import dev.kasoti.mrz.MrzPerson
@@ -116,7 +115,6 @@ object DemoCatalogue {
             demoMoment = "DEMO.md 0:00-0:20",
             expected = DemoScenario.ExpectedOutcome.GREEN,
         ) { DemoBodies.genuinePassport(it, GENUINE_PASSPORT) },
-
         DemoScenario(
             id = GENUINE_OFFSET_MACRO,
             title = "Genuine offset print — both zones agree",
@@ -124,7 +122,6 @@ object DemoCatalogue {
             demoMoment = "DEMO.md 0:20-1:00 (left)",
             expected = DemoScenario.ExpectedOutcome.GREEN,
         ) { DemoBodies.genuinePassport(it, GENUINE_OFFSET_MACRO) },
-
         DemoScenario(
             id = INKJET_PRINTOUT,
             title = "Inkjet printout — a copy, and both zones agree",
@@ -135,7 +132,6 @@ object DemoCatalogue {
             // the kind of overclaim AGENTS.md §5 forbids.
             expected = DemoScenario.ExpectedOutcome.GREEN,
         ) { DemoBodies.inkjetPrintout(it) },
-
         DemoScenario(
             id = FORGED_INKJET_TWIN,
             title = "Forged inkjet twin — photo zone replaced",
@@ -143,7 +139,6 @@ object DemoCatalogue {
             demoMoment = "DEMO.md 1:00-1:40",
             expected = DemoScenario.ExpectedOutcome.RED,
         ) { DemoBodies.forgedTwin(it) },
-
         DemoScenario(
             id = ALIAS_RAMESH_SURESH,
             title = "Alias — earlier crossing under another name",
@@ -151,7 +146,6 @@ object DemoCatalogue {
             demoMoment = "DEMO.md 1:40-2:20",
             expected = DemoScenario.ExpectedOutcome.RED,
         ) { DemoBodies.aliasCase(it) },
-
         DemoScenario(
             id = WATCHLIST_HIT,
             title = "Watchlist match",
@@ -159,7 +153,6 @@ object DemoCatalogue {
             demoMoment = "DEMO.md 1:40-2:20 (optional)",
             expected = DemoScenario.ExpectedOutcome.AMBER,
         ) { DemoBodies.watchlist(it) },
-
         DemoScenario(
             id = ROUTER_UNSUPPORTED,
             title = "Unsupported document — honest software",
@@ -167,7 +160,6 @@ object DemoCatalogue {
             demoMoment = "DEMO.md §5 recovery line",
             expected = DemoScenario.ExpectedOutcome.AMBER,
         ) { DemoBodies.unsupportedTrack(it) },
-
         DemoScenario(
             id = BLURRY_RETAKE,
             title = "Blurred capture — retake, never an accusation",

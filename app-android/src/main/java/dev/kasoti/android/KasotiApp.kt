@@ -7,12 +7,10 @@ import dev.kasoti.android.field.EvidenceAssembler
 import dev.kasoti.android.field.FieldLog
 import dev.kasoti.android.field.FieldLogEntry
 import dev.kasoti.android.field.FieldLogFormat
-import dev.kasoti.android.field.FixedClock
 import dev.kasoti.android.field.IdFactory
 import dev.kasoti.android.field.InMemoryEnrolmentStore
 import dev.kasoti.android.field.MathLayer
 import dev.kasoti.android.field.ScreeningSession
-import dev.kasoti.android.platform.JcaDigest
 import dev.kasoti.android.platform.MlKitOcrEngine
 import dev.kasoti.android.platform.MlKitQrScanner
 import dev.kasoti.android.platform.ModelPinLoader
@@ -21,7 +19,6 @@ import dev.kasoti.android.platform.defaultDigest
 import dev.kasoti.threshold.ThresholdName
 import dev.kasoti.threshold.ThresholdRegistry
 import dev.kasoti.time.IsoDate
-import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter

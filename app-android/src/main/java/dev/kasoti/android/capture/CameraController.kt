@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.ImageFormat
 import android.util.Log
 import android.util.Size
 import androidx.camera.core.CameraSelector
@@ -21,10 +20,10 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import dev.kasoti.android.field.CaptureMeasurements
 import dev.kasoti.android.field.FieldLog
 import dev.kasoti.android.field.FieldLogEntry
 import dev.kasoti.android.field.FrameMetrics
-import dev.kasoti.android.field.CaptureMeasurements
 import dev.kasoti.android.platform.AndroidImaging
 import dev.kasoti.fusion.FindingCode
 import java.util.concurrent.ExecutorService

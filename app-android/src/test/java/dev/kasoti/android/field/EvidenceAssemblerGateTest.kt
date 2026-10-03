@@ -4,7 +4,6 @@ import dev.kasoti.fusion.FindingCode
 import dev.kasoti.fusion.Verdict
 import dev.kasoti.mrz.MrzBuilder
 import dev.kasoti.mrz.MrzPerson
-import dev.kasoti.threshold.ThresholdName
 import dev.kasoti.time.IsoDate
 import kotlin.test.Test
 import kotlin.test.assertEquals

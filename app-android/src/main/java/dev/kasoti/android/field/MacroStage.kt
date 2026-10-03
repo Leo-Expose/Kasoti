@@ -1,8 +1,8 @@
 package dev.kasoti.android.field
 
 import dev.kasoti.factory.DocAggregator
-import dev.kasoti.factory.GrayImage
 import dev.kasoti.factory.DocProcess
+import dev.kasoti.factory.GrayImage
 import dev.kasoti.factory.MacroGate
 import dev.kasoti.factory.ProcessClassifier
 import dev.kasoti.fusion.MacroEvidence
@@ -133,7 +133,6 @@ class MacroStage(
             CaptureQuality.UvReading.UNSUPPORTED -> UvState.UNSUPPORTED
         }
     }
-
 
     /**
      * Classify one patch.

@@ -5,12 +5,10 @@ import dev.kasoti.fusion.Evidence
 import dev.kasoti.fusion.MacroEvidence
 import dev.kasoti.fusion.Presentation
 import dev.kasoti.fusion.QualityReport
-import dev.kasoti.fusion.Track
 import dev.kasoti.fusion.TrustState
 import dev.kasoti.fusion.VerdictReport
 import dev.kasoti.mrz.MrzResult
 import dev.kasoti.threshold.ThresholdRegistry
-import dev.kasoti.time.IsoDate
 
 /**
  * One screening, from the first shutter to a verdict (the cascade of DESIGN.md principle 2).

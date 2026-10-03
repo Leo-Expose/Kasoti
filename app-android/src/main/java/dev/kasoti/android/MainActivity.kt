@@ -1,7 +1,7 @@
 package dev.kasoti.android
 
-import android.Manifest
 import android.graphics.Bitmap
+import android.Manifest
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -18,24 +18,24 @@ import dev.kasoti.android.field.CaptureStep
 import dev.kasoti.android.field.DemoCatalogue
 import dev.kasoti.android.field.MacroStage
 import dev.kasoti.android.field.MrzExtractor
-import dev.kasoti.android.field.QualityReportFactory
 import dev.kasoti.android.field.Quad
+import dev.kasoti.android.field.QualityReportFactory
 import dev.kasoti.android.field.RouteSignals
 import dev.kasoti.android.field.ScreeningSession
 import dev.kasoti.android.field.TrackRouter
-import dev.kasoti.android.platform.ModelStore
-import dev.kasoti.factory.ProcessClassifier
-import dev.kasoti.factory.SvmModelReader
 import dev.kasoti.android.field.VizFields
 import dev.kasoti.android.platform.AndroidImaging
+import dev.kasoti.android.platform.ModelStore
 import dev.kasoti.android.platform.VizFieldReader
 import dev.kasoti.android.view.CameraSurface
-import dev.kasoti.android.view.VoiceReadout
 import dev.kasoti.android.view.KasotiScreen
+import dev.kasoti.android.view.VoiceReadout
 // `Quad.withCorner` is a top-level extension declared in `view/QuadHandleOverlay.kt`, not a
 // member of `Quad`. Without this import the overlay's own call site resolved and the activity's
 // did not, which is the only reason this ever failed to compile.
 import dev.kasoti.android.view.withCorner
+import dev.kasoti.factory.ProcessClassifier
+import dev.kasoti.factory.SvmModelReader
 import dev.kasoti.fusion.FindingCode
 import dev.kasoti.fusion.QualityReport
 import dev.kasoti.fusion.Track
@@ -48,8 +48,8 @@ import dev.kasoti.ui.CaptureProgressBuilder
 import dev.kasoti.ui.FieldStrings
 import dev.kasoti.ui.FlowController
 import dev.kasoti.ui.PermissionState
-import dev.kasoti.ui.QualityMeter
 import dev.kasoti.ui.QuadMode
+import dev.kasoti.ui.QualityMeter
 import dev.kasoti.ui.ScreenState
 import dev.kasoti.ui.UiEvent
 import dev.kasoti.ui.VerdictPresenter

@@ -4,8 +4,8 @@ import dev.kasoti.diary.CrossingEvent
 import dev.kasoti.diary.FileDiary
 import dev.kasoti.diary.InMemoryDiaryStorage
 import dev.kasoti.fusion.Evidence
-import dev.kasoti.fusion.FindingCode
 import dev.kasoti.fusion.FaceEvidence
+import dev.kasoti.fusion.FindingCode
 import dev.kasoti.fusion.MacroEvidence
 import dev.kasoti.fusion.MathEvidence
 import dev.kasoti.fusion.ProcessLabel
@@ -13,10 +13,8 @@ import dev.kasoti.fusion.QualityReport
 import dev.kasoti.fusion.Track
 import dev.kasoti.fusion.TrustState
 import dev.kasoti.i18n.Language
-import dev.kasoti.mrz.MrzBuilder
 import dev.kasoti.threshold.ThresholdName
 import dev.kasoti.threshold.ThresholdRegistry
-import dev.kasoti.time.IsoDate
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals

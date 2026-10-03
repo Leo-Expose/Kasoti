@@ -2,8 +2,6 @@ package dev.kasoti.android.field
 
 import dev.kasoti.factory.GrayImage
 import kotlin.math.abs
-import kotlin.math.max
-import kotlin.math.min
 
 /**
  * Four normalised corners of a document, clockwise from top-left.

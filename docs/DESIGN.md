@@ -23,7 +23,7 @@
 - **No `@Composable` in `:ui`.** DESIGN D7 chose Compose Multiplatform; that shape was **not
   taken** (decision log, `HANDOFF.md` §7). `:ui` is a plain `kotlin-jvm` module of presentation
   state, a reducer and a `FieldView` interface, with no renderer bound. `:app-android` writes its
-  own Compose view; a desktop renderer does not exist. Logic is tested (**55 tests**; 44 on
+  own Compose view; a desktop renderer does not exist. Logic is tested (**58 tests**; 55 on
   2026-09-30). ⚠️ **2026-10-03:** the *Android* binding (`ComposeFieldView.kt`) **has now been
   compiled** by AGP and the Compose compiler and ships inside the APKs — the remaining gap is the
   **desktop** renderer, not the Android one. Neither has ever been *displayed*, because no device
@@ -106,7 +106,7 @@ append(rec: DecisionRecord): Hash; verifyChain(): Boolean
 
 | Capability | Android actual | Desktop actual | I/O contract |
 |---|---|---|---|
-| Face detect | BlazeFace-short TFLite. ⚠️ **compiles against the real LiteRT AAR since 2026-10-03** (`assembleDebug`/`assembleRelease` succeed), **and has never run on a device.** The decode, sigmoid, anchor grid, NMS and input preparation are pure Kotlin in `dev.kasoti.android.ml`, unit-tested and required to be **bit-identical** to `:platform`'s on the real detector output committed in `eval/fixtures/face/raw_outputs/`. ⚠️ those two suites run via `app-android/tools/verify-offline.sh` (201/201), **not** via `:app-android:test`, which does not compile | Same BlazeFace TFLite via `ai.djl.tflite`. ✅ works on `linux-x86_64` / `osx-x86_64`; **review-only elsewhere** | RGB in → boxes+landmarks out |
+| Face detect | BlazeFace-short TFLite. ⚠️ **compiles against the real LiteRT AAR since 2026-10-03** (`assembleDebug`/`assembleRelease` succeed), **and has never run on a device.** The decode, sigmoid, anchor grid, NMS and input preparation are pure Kotlin in `dev.kasoti.android.ml`, unit-tested and required to be **bit-identical** to `:platform`'s on the real detector output committed in `eval/fixtures/face/raw_outputs/`. ⚠️ those two suites now run **twice**: by `:app-android:test` (green, 142 unique tests per build-type variant) *and* via `app-android/tools/verify-offline.sh` (204/204) on a bare JVM. They were **moved** to `platform/src/jvmTest/kotlin/dev/kasoti/android/ml/` — `:app-android:test` used to fail with 160 compile errors because an Android test source set cannot see `:platform`'s JVM classes | Same BlazeFace TFLite via `ai.djl.tflite`. ✅ works on `linux-x86_64` / `osx-x86_64`; **review-only elsewhere** | RGB in → boxes+landmarks out |
 | Face embed | ⚠️ **NO WEIGHTS EXIST** — the `emb_v1.tflite` slot is empty. The code path is a labelled seam that yields `face = null` | same — no weights, no path | aligned face → 128 floats |
 | OCR | ML Kit TR v2 bundled. ⚠️ **compiles** (2026-10-03), **never run** | Tess4J + tesseract (MRZ config) / manual fallback. ✅ 137 platform tests green | crop → text + conf |
 | Crypto | JCA (RSA/EC/AES) + Keystore. ⚠️ **compiles**, **never run** — the keystore path is unverified | JCA + OS store notes. ✅ | bytes in/out |
@@ -175,7 +175,7 @@ Case bundle (zip): `case.json` (evidence + findings + policy versions) + `crops/
 `armeabi-v7a` release artefact is the one that would notice ML Kit growing first, and it has
 18.86 MB of headroom. The P1 fallback if that closes is Tesseract-Android (Tess4J-android) —
 still undecided, and now *measurable* rather than unmeasurable. The `x86_64` split measured
-35.95 MB and was **dropped** on that basis; `x86` was dropped with it. **There is no `.aab`**, so
+35.95 MB and was **dropped** on that basis — ⚠️ **CORRECTED 2026-10-03: the `splits.abi` configuration this paragraph describes, which dropped `x86`/`x86_64` along with the split APKs, has been REMOVED entirely**, so both emulator ABIs are back in the bundle and the app installs on an emulator again. The 35.95 MB figure was measured against a *per-ABI split APK*, which is a container, not a download; the bundle's actual worst per-device slice is 14.60 MB. And the `.aab` **does** exist now**, so
 "if over" currently means "drop or replace a dependency, or drop an ABI" — widening the 35 MB
 number is not an available option (AGENTS.md §5, §8).
 

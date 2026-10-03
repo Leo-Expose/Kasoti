@@ -100,7 +100,7 @@ after a revocation mid-screening. Tested.
 ```bash
 # :ui is ALWAYS in the build. It is plain kotlin-jvm — no Android, no Compose, no SDK
 # needed — so this works identically with or without an Android SDK present:
-sh gradlew :ui:test          # 55 tests, 0 failures (measured 2026-10-03; 44 on 2026-09-30)
+sh gradlew :ui:test          # 58 tests, 0 failures (measured 2026-10-03; 44 on 2026-09-30)
 
 # app-android/tools/verify-offline.sh also compiles and tests this module, as part of
 # its tier-1 pass. That is a second, independent path, not the only path.
@@ -117,7 +117,7 @@ SDK, it is stale: CI runs `./gradlew :ui:test` unconditionally, with no SDK-dete
 
 ## 5. Unverified
 
-Everything in this module is compiled and tested (**55 tests**, green, measured 2026-10-03).
+Everything in this module is compiled and tested (**58 tests**, green, measured 2026-10-03).
 What has **not** been verified is the *binding* — and this section was wrong twice, in both
 directions, so here is the precise state:
 

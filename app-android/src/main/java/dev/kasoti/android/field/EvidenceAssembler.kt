@@ -1,5 +1,6 @@
 package dev.kasoti.android.field
 
+import dev.kasoti.face.FaceMath
 import dev.kasoti.fusion.ChipEvidence
 import dev.kasoti.fusion.DiaryEvidence
 import dev.kasoti.fusion.Evidence
@@ -13,9 +14,7 @@ import dev.kasoti.fusion.Track
 import dev.kasoti.fusion.TrustState
 import dev.kasoti.fusion.Verdict
 import dev.kasoti.fusion.VerdictReport
-import dev.kasoti.face.FaceMath
 import dev.kasoti.threshold.ThresholdRegistry
-import dev.kasoti.time.IsoDate
 
 /**
  * The result of assembling a case, plus the evidence that produced it.

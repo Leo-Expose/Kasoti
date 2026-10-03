@@ -336,7 +336,10 @@ rather than "done":
    not close:** ML Kit's bundled-model offline use under the Google Terms is still **UNVERIFIED**,
    and it is now *more* exposed rather than less, because the licence question was previously
    blocked on "no binary exists" and now has a binary it simply has not been checked against.
-   Nothing has run — no OCR call, no barcode scan, no camera frame — and **there is no `.aab`**,
+   Nothing has run — no OCR call, no barcode scan, no camera frame — and ⚠️ **CORRECTED 2026-10-03:
+"there is no `.aab`" stopped being true the same day** (`bundleRelease` is BUILD SUCCESSFUL;
+`app-android-release.aab` is 36.97 MB, 14.60 MB worst per-device slice — **though it has still
+never been uploaded to Play, so no licence has travelled with it)**, and
    so the shipped artefact is an APK whose contents no bundle-manifest check covers.
    `docs/STATUS.md` R-C.
 

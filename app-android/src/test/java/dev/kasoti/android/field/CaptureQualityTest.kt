@@ -2,7 +2,6 @@ package dev.kasoti.android.field
 
 import dev.kasoti.fusion.FindingCode
 import dev.kasoti.fusion.Track
-import dev.kasoti.fusion.Verdict
 import dev.kasoti.threshold.ThresholdName
 import dev.kasoti.threshold.ThresholdRegistry
 import kotlin.test.Test
@@ -17,7 +16,7 @@ internal object FieldFixtures {
     val REGISTRY: ThresholdRegistry = ThresholdRegistry.defaults("v1", "field-test")
     val TODAY = dev.kasoti.time.IsoDate(2026, 9, 29)
     val CLOCK = FixedClock("2026-09-29T11:00:00.000Z")
-    val REFERENCE_YEAR = 2026
+    const val REFERENCE_YEAR = 2026
 }
 
 /** A capture that is in focus, correctly lit, and straight on. */
