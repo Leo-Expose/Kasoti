@@ -57,8 +57,9 @@ Every PR must satisfy all seven. "Done" is not a judgement call.
    metric deltas in the PR body. If a number moved, say which way and why.
 3. **Thresholds registered.** Any tunable goes into the registry with name,
    default, unit, tuning-data reference and owner. Magic numbers elsewhere are
-   a review fail, and CI has a check for it
-   (`scripts/check_no_magic_thresholds.sh`).
+   a review fail, and CI now **fails the build** on one
+   (`scripts/check_no_magic_thresholds.sh`, blocking as of 2026-10-03). Fix it in
+   the registry — never by widening the script's allowlist.
 4. **Strings added** — English **and** Hindi. Tag Nepali as a todo if the
    feature is P1. Never show a raw string to the UI; every finding code needs
    both languages.
@@ -162,7 +163,10 @@ sh gradlew :eval:run --args="smoke"              # fixtures harness (~60 s) — 
 sh gradlew :eval:run --args="full"               # full corpora — EXITS 4
 
 ./scripts/check_no_network_in_core.sh            # hard gate — GREEN (93 files, 2026-10-03)
-./scripts/check_no_magic_thresholds.sh           # advisory — RED (175 lines, 2026-10-03)
+./scripts/check_no_magic_thresholds.sh           # hard gate — GREEN (69 files, 0 findings) and BLOCKING
+                                             # (was RED at 175 lines earlier on 2026-10-03).
+                                             # Green is not complete: 17 file paths are exempt by
+                                             # path, so a reviewer still reads diffs that touch them.
 ./scripts/pii_scrubber_test.sh                   # GREEN (7 suites / 111 tests) and BLOCKING
 
 # android — needs an SDK in local.properties or ANDROID_HOME

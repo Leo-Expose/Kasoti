@@ -164,6 +164,18 @@ STUB_SRC="app-android/tools/stubs"
 UI_SRC="ui/src/main"
 FIELD_TEST_SRC="app-android/src/test/java/dev/kasoti/android/field"
 ML_TEST_SRC="app-android/src/test/java/dev/kasoti/android/ml"
+# The two cross-module face-detector PARITY suites were moved out of `ML_TEST_SRC` on 2026-10-03
+# and now live in `:platform`'s `jvmTest` tier, which is the only source set in the build that can
+# see BOTH the Android decode (`dev.kasoti.android.ml`, from `:app-android`) and the desktop decode
+# (`dev.kasoti.platform.ml.tflite`, from `:platform`) at once — an Android unit-test source set
+# cannot resolve a KMP `jvmMain` source set, which is why `:app-android:test` could not compile them.
+#
+# They are STILL compiled and run here, against the same real `:core` and `:platform` class output.
+# That is deliberate duplication with `:platform:jvmTest`, not redundancy: this script checks them
+# from the Android side with `:app-android`'s own sources, Gradle checks them as part of `:platform`,
+# and the two disagreeing is itself the signal that would catch a classpath mistake in either.
+# Dropping either copy would reduce coverage, so if you move one of them, move BOTH.
+PLATFORM_ML_TEST_SRC="platform/src/jvmTest/kotlin/dev/kasoti/android/ml"
 UI_TEST_SRC="ui/src/test/kotlin"
 
 if [ "${1:-}" = "--list" ]; then
@@ -174,7 +186,7 @@ if [ "${1:-}" = "--list" ]; then
   find "$UI_SRC" -name '*.kt' | sort
   echo
   echo "TESTS RUN HERE:"
-  find "$FIELD_TEST_SRC" "$ML_TEST_SRC" "$UI_TEST_SRC" -name '*.kt' | sort
+  find "$FIELD_TEST_SRC" "$ML_TEST_SRC" "$PLATFORM_ML_TEST_SRC" "$UI_TEST_SRC" -name '*.kt' | sort
   echo
   echo "TIER 2 (compiled against hand-written API stubs — a name-resolution check, not a build):"
   echo "  $BINDING_SRC/TfliteFace.kt"
@@ -196,7 +208,7 @@ fi
 # tick: JcaCrypto.kt reaching for android.security would stop compiling, and the *reason* would be
 # buried in a wall of unrelated unresolved references.
 BANNED='^import (android|androidx|org\.tensorflow|com\.google\.mlkit|com\.google\.android)'
-LEAKS="$(grep -rEn "$BANNED" "$FIELD_SRC" "$ML_SRC" "$UI_SRC" "$FIELD_TEST_SRC" "$ML_TEST_SRC" "$UI_TEST_SRC" "$CRYPTO_SRC" 2>/dev/null || true)"
+LEAKS="$(grep -rEn "$BANNED" "$FIELD_SRC" "$ML_SRC" "$UI_SRC" "$FIELD_TEST_SRC" "$ML_TEST_SRC" "$PLATFORM_ML_TEST_SRC" "$UI_TEST_SRC" "$CRYPTO_SRC" 2>/dev/null || true)"
 if [ -n "$LEAKS" ]; then
   echo "verify-offline: a platform import appeared in the SDK-free set:" >&2
   echo "$LEAKS" >&2
@@ -256,7 +268,7 @@ kotlinc "$OUT/fieldtest" -cp "$CP:$OUT/field:$OUT/ui:$KTEST_JAR:$KTEST_J5_JAR:$J
 # is the entire reason they exist. `:platform` is not a dependency of `:app-android` — an Android
 # module cannot resolve a KMP `jvmMain` source set — so this is a deliberate, documented
 # test-only edge, and it is what makes the duplicated decode checkable rather than hopeful.
-kotlinc "$OUT/mltest" -cp "$CP:$OUT/field:$PLATFORM_CLASSES:$KTEST_JAR:$KTEST_J5_JAR:$JUPITER_API_JAR" "$ML_TEST_SRC"
+kotlinc "$OUT/mltest" -cp "$CP:$OUT/field:$PLATFORM_CLASSES:$KTEST_JAR:$KTEST_J5_JAR:$JUPITER_API_JAR" "$ML_TEST_SRC" "$PLATFORM_ML_TEST_SRC"
 
 # A tiny launcher, so the script does not depend on junit-platform-console-standalone being in
 # the cache (it usually is not; the individual jars are).

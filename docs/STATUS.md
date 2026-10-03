@@ -27,9 +27,10 @@ re-executed (see §4.7).
 >
 > **Every correction moved a claim toward the truth, and several moved it against our interest.**
 > CI is red, `gradlew` does not run from a clone, there is no `.aab`, `:app-android:test` does
-> not compile, `ktlint`/`detekt` are red, and the magic-threshold gate is red. None of those was
-> softened or removed to make the project look better; each is now stated with the command that
-> proves it.
+> not compile, `ktlint`/`detekt` are red, and the magic-threshold gate **was** red until
+> 2026-10-03. None of those was softened or removed to make the project look better; each is now
+> stated with the command that proves it — including the magic-threshold gate, which is now green
+> **and** blocking, with the residual gap named rather than papered over (§4.2).
 
 > ⚠️ **The tracked tree is being edited concurrently by other agents.** These measurements are
 > attributed to a **working tree**, not to a commit, because the work that produced them is
@@ -62,7 +63,7 @@ every case (§0 note) — use `sh gradlew`.
 | 7 | `sh gradlew ktlintCheck --continue` | ❌ **exit 1 — 4 267 violations across 12 of 35 failing ktlint Check tasks.** The task exists (§4.3). ⚠️ **without `--continue` it under-reports (3 130)** because Gradle stops at the first failing task | 2026-10-03 |
 | 8 | `sh gradlew detekt` | ❌ **exit 1 — 1 349 weighted issues** across all 5 module tasks | 2026-10-03 |
 | 9 | `sh scripts/check_no_network_in_core.sh` | ✅ **exit 0 — 93 Kotlin files scanned, zero banned constructs** (was 78 on 2026-09-30) | 2026-10-03 |
-| 10 | `sh scripts/check_no_magic_thresholds.sh` | ❌ **exit 1 — 175 source lines** carry unregistered literals (was 171) | 2026-10-03 |
+| 10 | `sh scripts/check_no_magic_thresholds.sh` | ✅ **exit 0 — 69 files scanned, 0 findings.** ⚠️ this row read "exit 1 — 175 source lines" earlier on 2026-10-03, and that stopped being true the same day. The CI gate is now **blocking** (§4.2). **It is not a claim that `:core` has no magic numbers** — 17 file paths are exempt by path, not by line | 2026-10-03 |
 | 11 | `sh scripts/pii_scrubber_test.sh` | ✅ **exit 0 — PII scrubber present, 7 suites green, 111 tests executed.** ⚠️ this row said "PII scrubber NOT IMPLEMENTED YET, exit 1" on 2026-09-30. `core/.../log/PiiScrubber.kt` exists and the gate is now **blocking in CI** (§4.1) | 2026-10-03 |
 | 12 | `sh scripts/fetch_models.sh` | ✅ **exit 0 — every requested model present and SHA-256 verified** | 2026-10-03 |
 | 13 | `sh scripts/airplane_install_test.sh` | ⚠️ **exit 1 — and NOT on size.** It passes step A (it finds all four APKs and hashes the release arm64 candidate), then step B **refuses**: `scripts/bundle_manifest.sample.txt` still holds 2 unpopulated placeholder hashes. That is by design and pre-existing; the file's own header says a green run is impossible until real model hashes exist. `sh scripts/airplane_install_test.sh --skip-bundle` reaches step D and **exits 2** = INCOMPLETE (no `adb` on PATH, no device) | 2026-10-03 |
@@ -148,7 +149,7 @@ say so. §0 is the reviewer-facing table; this is the detailed one, with provena
 | `sh gradlew :app-desktop:distZip` / `distTar` | ✅ exist (the `application` plugin's tasks) |
 | `app-desktop/build/install/kasoti/bin/kasoti help` | ✅ **runs and executes the packaged launcher**; prints the command table and the resolved model path with its origin — measured 2026-10-03 as *"…/share/kasoti/models/svm_print_v1_synthetic.json (shipped inside this installation)"* |
 | `sh scripts/check_no_network_in_core.sh` | ✅ **green — 93 Kotlin files scanned, zero banned constructs** (exit 0). ⚠️ measured 78 on 2026-09-30 and 75 before that; the count moves as `:core` grows |
-| `./scripts/check_no_magic_thresholds.sh` | ❌ **red (exit 1) — 175 source lines** carry unregistered numeric literals in `:core` product code (measured 2026-10-03; 171 on 2026-09-30). `dev/kasoti/threshold/` is exempt, since it embeds the registry file verbatim |
+| `./scripts/check_no_magic_thresholds.sh` | ✅ **GREEN as of 2026-10-03 — exit 0, 69 files scanned, 0 findings** (⚠️ this row read "red (exit 1) — 175 source lines" earlier the same day). The CI gate is now **blocking**, and a second step proves it can fail (§4.2). `dev/kasoti/threshold/` is exempt, since it embeds the registry file verbatim. **Not** a claim that `:core` has no magic numbers — see the residual gap in §4.2 |
 | ~~`./scripts/pii_scrubber_test.sh`~~ | ✅ **GREEN as of 2026-10-03 — exit 0, 7 suites, 111 tests.** ⚠️ this row said "red (exit 1) — PII scrubber NOT IMPLEMENTED YET in `:core`" on 2026-09-30; `core/src/commonMain/kotlin/dev/kasoti/log/PiiScrubber.kt` and its seven suites now exist and the CI step is **blocking** (§4.1) |
 | `./scripts/fetch_models.sh` | ✅ **green (exit 0) — 1 model present and SHA-256 verified** (`blazeface_short.tflite`, 229,746 B, `b4578f35…`). `--record` independently reproduces the pinned digest. See §2.1. |
 | `./scripts/fetch_models.sh scripts/models_manifest.sample.tsv` | ✅ **green by refusing** — the sample's `REPLACE_ME` fields abort before any network access. The refusal path still works. |
@@ -495,9 +496,9 @@ a run INCOMPLETE. That is the designed behaviour, not a failure, and `summary.md
 
 | Thing | State |
 |---|---|
-| `.github/workflows/ci.yml` | ✅ written, **669 lines** (measured 2026-10-03; 578 on 2026-09-30, and 285 before that), 2 jobs (`verify`, weekly `offline-proof`), parses as YAML. ❌ **it has run — twice, and failed both times** (R-J). **CHANGED 2026-10-03, three things:** (a) the **PII-scrubber step is now a HARD gate** — it carries no `continue-on-error` and fails the build if the scrubber is absent, broken, or silently running zero tests; (b) the size step **delegates to `:app-android:checkApkSize`** instead of `:app-android:bundleRelease`, which no longer runs (ABI splits × AGP 8.9.2), so there is no `.aab` in this build and delivery is APK-only; (c) `verify` can still be green with **two** red gates inside it — lint and magic-thresholds are both `continue-on-error: true`. Remaining known defect is R-J's exec bit |
+| `.github/workflows/ci.yml` | ✅ written, **860 lines** (measured 2026-10-03; 679 before the magic-threshold gate was promoted from advisory to blocking, 578 on 2026-09-30, and 285 before that), 2 jobs (`verify`, weekly `offline-proof`), parses as YAML. ❌ **it has run — twice, and failed both times** (R-J). **CHANGED 2026-10-03, three things:** (a) the **PII-scrubber step is now a HARD gate** — it carries no `continue-on-error` and fails the build if the scrubber is absent, broken, or silently running zero tests; (b) the size step **delegates to `:app-android:checkApkSize`** instead of `:app-android:bundleRelease`, which no longer runs (ABI splits × AGP 8.9.2), so there is no `.aab` in this build and delivery is APK-only; (c) `verify` can still be green with **one** red gate inside it — lint, which is `continue-on-error: true` for a red-backlog reason (§4.3). ⚠️ **CHANGED later on 2026-10-03: the magic-thresholds step is no longer one of them** — `continue-on-error` was removed, a finding now fails the build, and a second step proves on every run that the gate can fail. See §4.2 for what it still cannot see. Remaining known defect is R-J's exec bit |
 | `scripts/check_no_network_in_core.sh` | ✅ works, **green**, exit 0 — **93** files scanned (measured 2026-10-03; 78 on 2026-09-30, 75 before that) |
-| `scripts/check_no_magic_thresholds.sh` | ✅ works, **red** (**175** lines, exit 1 — measured 2026-10-03; 171 on 2026-09-30) — correctly, see §4.2 |
+| `scripts/check_no_magic_thresholds.sh` | ✅ works and is **green** (exit 0, 69 files scanned, 0 findings — measured 2026-10-03) — and its CI gate is **blocking**, see §4.2 for the residual file-scope gap. ⚠️ this row read "red (175 lines, exit 1)" earlier the same day |
 | `scripts/pii_scrubber_test.sh` | ✅ works and is now **GREEN** (exit 0, 7 suites, 111 tests, measured 2026-10-03). It was **red by design** (exit 1, "PII scrubber NOT IMPLEMENTED YET") until `core/.../log/PiiScrubber.kt` landed; the CI step is now blocking — see §4.1 |
 | `scripts/verify_bundle.sh` | ✅ works (exit 1); correctly refuses the unpopulated sample manifest |
 | `scripts/fetch_models.sh` | ✅ works (exit 0); correctly refuses the unpopulated sample manifest, no network touched |
@@ -635,14 +636,11 @@ by weakening a check (AGENTS.md §8).
    here — *this proves the rules work; it does not prove every call site uses them.* Until every
    log/cache/crash field is routed through `PiiScrubber`, "no PII in logs" for the shared path is
    a design intent with a tested scrubber behind it, not a verified property.
-2. **Magic thresholds — red, 175 lines, exit 1.** The check is *correct*; the codebase has not
-   been triaged. Many hits are legitimate (hash multipliers, ASCII codes, MRZ field offsets,
-   date arithmetic — `IsoInstant.kt:63,66,67,68,76,86,87` is seven of them). Each needs either a
-   registered threshold or a justified allowlist rule. **Owner:** maintainer. Do **not** fix
-   this by widening the allowlist until the build goes green. (The previous revision of this
-   paragraph reported that `.github/workflows/ci.yml` hard-coded "~94 lines" for this gate.
-   **That has been fixed**: the step now counts findings out of the script's own output at
-   `ci.yml:265-269` and reports the number it read, so the figure cannot go stale again.)
+2. **Magic thresholds — ✅ CLOSED, AND NOW A BLOCKING GATE as of 2026-10-03. This gate is GREEN and a finding fails the build.** ⚠️ **This item was "red, 175 lines, exit 1" earlier on 2026-10-03, and that is no longer true.** `sh scripts/check_no_magic_thresholds.sh` → **exit 0, 69 files scanned, 0 findings**, with 14 registry-declared structural exemptions in force. The cure was the registry, not the allowlist: `fusion/thresholds.v1.json` (`schemaVersion` 1, 49 thresholds) now carries a `structural` section declaring the 17 classes of number that are provably NOT tunables; the script implements a rule for each of the 14 marked `enforcedBy: ["script"]`; and the two lists are cross-checked against each other in **both** directions on every run — an exemption the script cannot enforce, or a rule the registry does not vouch for, is exit 2 rather than a pass. Nothing was widened to get here: no allowlist entry was added to silence a finding and no baseline is committed.
+   **The CI step no longer carries `continue-on-error: true`.** It mirrors the PII-scrubber step's structure, including its non-vacuity assertion: the script must exit 0 *and* print a scanned-file count, or the step fails — an exit 0 that examined nothing is a vacuous pass. **A second CI step proves, on every run, that this gate can fail** (`magic-thresholds-negtest`): it copies the real script and the real registry into a temp sandbox with a synthetic tree and requires that a clean sandbox exits 0, an injected `0.42` exits non-zero, the failure is reported as exactly 1 source line (the number the blocking step parses), and it names the injected file and line — then asserts `git status` is unchanged, because it must never write to the checkout. **Measured, not assumed:** a `0.42` injected into `core/src/commonMain/kotlin/dev/kasoti/diary/ImpossibleTravel.kt` gave script **exit 1** and CI step **exit 1**; restoring the file byte-identically (SHA-256 verified) gave **exit 0** again.
+   **⚠️ THE RESIDUAL GAP — this gate is blocking, and it still does not see everything. This entry is NOT a claim that `:core` has no magic numbers.** **7 of the 14 script-enforced exemptions match on PATH, not on the line**, which is 17 file paths where a literal is invisible to this gate: all of `mrz/`; `time/CalendarDate.kt`; `diary/IsoInstant.kt`; `json/{Base64Codec,JsonParser,CanonicalJson,JsonValue}`; `diary/Ulid.kt`; `crypto/Primitives.kt`; `factory/ModelJson.kt`; `evalmetrics/MetricJson.kt`; `checks/Verhoeff.kt`; `log/RedactionPolicy.kt`; `diary/EmbModel.kt`; `factory/Spectrum.kt`; `evalmetrics/{Percentiles,Classification}.kt`; `evalmetrics/Gate.kt`. **Measured, not assumed:** injecting a bare `0.42` into each of those 17 paths in turn gives **exit 0 every time**, against **exit 1** for the same literal in an unexempted path. `S11` is deliberately *not* in that list — it matches the `NumberFormat.`/`decimals` token on the line, which is why a literal in `MetricSink.kt` is still flagged; an earlier figure of "6 of the 17" that named `NumberFormat.kt` was wrong on both counts, and is corrected in `HANDOFF.md` §7.
+   **So there is no automated net for a magic number in those 17 files:** detekt would catch it, and detekt is advisory, still red, and has no notion of a structural exemption. **A reviewer must still read a diff that touches one of them** (AGENTS.md §4, §8). Decision, date and reason: `HANDOFF.md` §7.
+   **Owner:** maintainer. The only open part of this item is the reviewer duty above.
 3. **Lint — the tasks EXIST, run, and are RED. They are not wired into `check`, on purpose.**
    ⚠️ **This paragraph previously said "`ktlintCheck` and `detekt` are not runnable — the task does
    not exist", and that was false.** It was true of the tree as of commit `6db63d9` and is not
@@ -679,7 +677,13 @@ by weakening a check (AGENTS.md §8).
    in `AGENTS.md` §1. **Do not** switch a rule off or commit a baseline to reach green — that is
    weakening a gate (AGENTS.md §5, §8). This is also a *stated* SPEC NFR (NFR-M1: "detekt+ktlint
    clean") and it is currently unmet; CI runs both **advisory** so it reports them without
-   blocking.
+   blocking. **That is a different decision from the magic-threshold gate's (§4.2), and the two
+   must not be conflated.** Lint stays advisory because it is red and cannot be made green
+   without either a whole-tree reformat (ktlint) or a triage of ~1.2k issues (detekt) — and
+   blocking a permanently-red gate is how a maintainer learns to ignore one. The magic-threshold
+   gate was promoted because it was *already green*. Both steps still carry
+   `continue-on-error: true`, for opposite reasons. Neither lint disposition was changed by the
+   promotion.
 4. **APK size — ✅ MEASURED AND GREEN. Bundle size — ⛔ NOT MEASURABLE, AND THAT IS A REGRESSION.**
    ⚠️ **This item was "APK / bundle size — not runnable. Needs an Android SDK and a built
    `:app-android`. No size number may be quoted until it runs" on 2026-09-30, and that is now
@@ -994,10 +998,13 @@ that is not an oversight. Decision and reason: `HANDOFF.md` §7, 2026-09-30.
   that only grows is a risk register nobody reads.
 - **Do not mark something green because it *should* be.** Every red row in §4 has been
   re-measured, not remembered. Two of the three "risks" this file was previously asked to
-  close — magic thresholds and the PII scrubber. **One of the two closed on 2026-10-03:** the
-  `:core` PII scrubber exists, its 7 suites are green (111 tests) and the CI step is blocking.
-  Magic thresholds are **still red** at 175 lines. Only the Verhoeff finding had closed before
-  that.
+  close — magic thresholds and the PII scrubber. **BOTH closed on 2026-10-03:** the `:core` PII
+  scrubber exists, its 7 suites are green (111 tests) and the CI step is blocking; and
+  `check_no_magic_thresholds.sh` is green (exit 0, 69 files, 0 findings) with its CI step promoted
+  from advisory to blocking, plus a second step that proves the gate can fail. ⚠️ **Neither is a
+  claim that the problem is gone:** the PII step's own limit is call-site routing, and the
+  threshold gate still cannot see the 17 file paths it exempts by path rather than by line (§4.2).
+  "Green" and "blocking" are different claims from "complete", and only the first two are true.
 - **Do not soften a limitation to make a number look better.** The value of this file is that a
   judge can check it. Every correction in the 2026-09-30 and 2026-10-03 passes moved a claim
   *toward* the truth, **including the ones that are unflattering, and including the ones that
@@ -1007,7 +1014,10 @@ that is not an oversight. Decision and reason: `HANDOFF.md` §7, 2026-09-30.
   `:app-android:test` does not compile (160 errors); and CI's Android size step had to be
   rewritten because its old command stopped working. Along with the pre-existing unflattering
   facts that remain: CI is red on the exec bit, `gradlew` does not run from a clone, lint is red
-  at 4 267 / 1 349, magic thresholds are red at 175 lines, and nothing has ever run on a device.
+  at 4 267 / 1 349, and nothing has ever run on a device. ⚠️ magic thresholds is **no longer on
+  that list of red items** — it closed and went blocking on 2026-10-03 — but it did not do so by
+  becoming complete: it still misses 17 file paths, which is recorded in §4.2 rather than dropped
+  now that the step is green.
   A reader must be able to trust this file *because* it is unflattering in both directions.
 - **Count with the right command, or the number is wrong in the optimistic direction.** Three
   separate traps produced wrong totals in this file's history and all three are now written down:

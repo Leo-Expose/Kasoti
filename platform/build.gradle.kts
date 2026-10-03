@@ -158,6 +158,32 @@ kotlin {
             }
         }
         val jvmTest by getting {
+            // The face-detector PARITY suites live here, not in `:app-android`'s test source set.
+            //
+            // Why they are not there: `dev.kasoti.android.ml.{BlazeFaceModel,BlazeFaceDecoder,
+            // BlazeFaceInput}` is a deliberate, hand-maintained duplicate of this module's
+            // `AnchorDecoder`/`BlazeFaceAnchors`/`ImageIoImaging`, because an Android module cannot
+            // resolve a KMP `jvmMain` source set — `:platform` publishes an *android* variant with
+            // no `androidMain` sources, so the JVM classes are simply not on `:app-android`'s unit
+            // test classpath. The duplication is therefore forced, and the only thing that can stop
+            // it becoming drift is a test that loads BOTH implementations onto one classpath and
+            // requires them to agree element-for-element. This is that test's only possible home.
+            //
+            // `:platform` cannot depend on `:app-android` (a library must not depend on an app), so
+            // the classes under test are brought in by source directory instead. The scope is
+            // deliberately narrow — `ml/**` only, NOT `app-android/src/main` — because `ml/**`
+            // imports nothing but `kotlin.math` and is the only part of the Android module with no
+            // `android.*` in it. `verify-offline.sh` compiles the same two suites independently
+            // against the real `:core` and `:platform` class output; that second, unscripted check
+            // is deliberately left in place rather than removed as "redundant".
+            //
+            // ⚠ Side effect, recorded rather than hidden: these files were previously outside
+            // detekt's and ktlint's reach, because `:app-android` is not in the linted module list
+            // (root build.gradle.kts). Linting them as part of `:platform`'s test tier therefore
+            // ADDS findings to two already-red advisory gates. That is the linter covering code it
+            // never covered, not new debt — but it does mean a `platform` detekt count is no longer
+            // a statement about `:platform`'s own sources. See docs/STATUS.md.
+            kotlin.srcDir(rootProject.file("app-android/src/main/java/dev/kasoti/android/ml"))
             dependencies {
                 implementation(kotlin("test"))
             }

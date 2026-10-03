@@ -12,7 +12,8 @@ package dev.kasoti.android.ml
  * which is currently every machine that reviews this code. Keeping the interface and the geometry
  * in a file with no `android.*` and no `org.tensorflow.*` import means the values can be asserted
  * against `:platform`'s compiled `BlazeFaceContract`/`BlazeFaceAnchors` on a bare JVM
- * (`app-android/src/test/java/dev/kasoti/android/ml/BlazeFaceDesktopParityTest.kt`).
+ * (`platform/src/jvmTest/kotlin/dev/kasoti/android/ml/BlazeFaceDesktopParityTest.kt` — it lives in
+ * `:platform` because it is the one source set that can see both implementations at once).
  *
  * `:platform` is a KMP module whose actuals live in a `jvmMain` source set, and an Android module
  * cannot resolve that, so the duplication is structural rather than a preference. The test that

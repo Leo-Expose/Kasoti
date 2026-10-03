@@ -11,8 +11,9 @@ card, the trust lane, demo mode, and the wiring to `:core` that makes all of tho
 
 `sh gradlew :app-android:assembleDebug` and `:assembleRelease` both succeed, so everything under
 `src/main/java/dev/kasoti/android/{capture,platform,view}`, every resource file and every manifest
-line **has** now been through `aapt2`, `d8`, `R8` and the Compose compiler — four APKs exist and
-`sh gradlew :app-android:checkApkSize` reports all four within the 35.0 MB budget.
+line **has** now been through `aapt2`, `d8`, `R8` and the Compose compiler. `bundleRelease` succeeds
+too, and `sh gradlew :app-android:checkApkSize` reports all four containers within the 35.0 MB
+worst-case per-device-slice budget.
 
 **Why it never compiled before, in one line:** `app-android/build.gradle.kts` line 1 began with
 `#`. `#` is a **Groovy** comment marker; in a Kotlin script (`.kts`) the Kotlin script compiler
@@ -24,16 +25,63 @@ that line. Nothing about the module's code, resources, manifest or dependencies 
 - **No device, no `adb`, no run.** The app has never been installed or launched. CameraX, ML Kit
   OCR, TFLite inference, Compose rendering, the Keystore and the on-device wipe are **compiled,
   not exercised.** Compilation proves signatures; only a run proves behaviour.
-- **`x86`/`x86_64` are not shipped**, so **there is no emulator build** — `arm64-v8a` and
-  `armeabi-v7a` only. There is no universal APK either, so there is no single file that installs
-  everywhere.
-- **There is no `.aab`.** `:app-android:bundleRelease` fails on AGP 8.9.2 once ABI splits are on
-  (`buildReleasePreBundle` → `Sequence contains more than one matching element`), so **delivery is
-  APK-only** and this build cannot produce a Play Store bundle.
-- **`:app-android:test` does not compile** — 160 errors, all in
+- **There is no `sideloadApk` that has ever been installed.** The task exists and builds a
+  one-ABI, debug-key-signed APK for exactly this purpose (see §1a), but nothing in this repo has
+  pushed one to a handset, so the run half of the claim is still unmade.
+- **There is no unit-test coverage for the capture/ML path at the Android layer.**
+  `:app-android:test` does not compile — 160 errors, all in
   `src/test/java/dev/kasoti/android/ml/BlazeFaceDesktopParityTest.kt` (150) and
   `…/ml/BlazeFaceInputTest.kt` (10), which import `:platform`'s **JVM** classes that the Android
-  variant cannot see. Pre-existing since commit `06bd654`.
+  variant cannot see. Pre-existing since commit `06bd654`, and covered instead by
+  `app-android/tools/verify-offline.sh` on a bare JVM.
+
+### 1a. Getting an APK onto a real handset
+
+The shipping product is the **Android App Bundle**:
+
+```
+sh gradlew :app-android:bundleRelease
+#   -> app-android/build/outputs/bundle/release/app-android-release.aab   (36.97 MB)
+```
+
+An `.aab` is never installed as a file — Play slices it per device — so it cannot be used for a
+pre-Play handset run. `assembleDebug` / `assembleRelease` *do* emit installable APKs, but they are
+**universal**: `arm64-v8a` + `armeabi-v7a` + `x86` + `x86_64` in one 88 MB / 78 MB file. For a
+handset you want one ABI:
+
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
+
+sh gradlew :app-android:sideloadApk                              # arm64-v8a, 23.01 MB
+sh gradlew :app-android:sideloadApk -Pkasoti.sideloadAbi=armeabi-v7a   # 16.18 MB
+# the task prints the absolute path and size; install it with:
+adb install -r app-android/build/outputs/apk/sideload/app-android-sideload.apk
+adb shell monkey -p dev.kasoti.android.sideload -c android.intent.category.LAUNCHER 1
+```
+
+| | |
+|---|---|
+| What it is | a **LOCAL TESTING artefact**. Never uploaded to Play or anywhere else. |
+| The shipping product | `app-android/build/outputs/bundle/release/app-android-release.aab` |
+| Path | `app-android/build/outputs/apk/sideload/app-android-sideload.apk` |
+| Size | 23.01 MB (arm64-v8a) · 16.18 MB (armeabi-v7a) — measured 2026-10-03 |
+| Package | `dev.kasoti.android.sideload` — a **third** app on the handset, beside release and debug |
+| Signing | the auto-generated **debug** key, so `adb install` works. It cannot overwrite a provisioning-signed release install (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`), by design. |
+| Build type | `initWith(release)` — R8 + `shrinkResources` **on**, so this is the closest thing to what Play serves. A pre-Play run should catch an R8-stripped TFLite/ML Kit entry point, which a debuggable APK would hide. |
+| Gate | **Yes, blocking.** `checkApkSize` depends on `assembleSideload` and measures this APK's worst-case per-device slice (22.91 MB at arm64-v8a) against the same 35 MB budget. |
+
+How it works: the ABI filter is a `ndk { abiFilters }` declared **inside the `sideload` build
+type**, never at `android { }` top level. The `release` build type carries no filter, so
+`bundleRelease` still packs all four ABIs — verified by rebuilding the bundle from scratch either
+side of the change and getting the same 38 762 571 bytes and the same
+`sha256 66bfee7c92a27e1c40c6fa758b6416a71ae34c4cea6b510e21e1451156adadab`. The reasoning and the
+rejected alternatives (splits, a flavour dimension, per-variant filtering via the AGP Variant API,
+zip surgery + re-signing) are in the ADRs in `build.gradle.kts`, next to the block they justify.
+
+Use the universal `app-android-debug.apk` when you want an **emulator** — the sideload task
+deliberately refuses `x86`/`x86_64` (`-Pkasoti.sideloadAbi=x86_64` fails at configure time naming
+the two valid values), because a sideload APK is for a handset and the emulator ABIs are one
+`assembleDebug` away anyway.
 
 Independently of all that, the SDK-free harness still runs, with the pinned Kotlin 2.1.21 compiler
 against the real `:core` classes:
@@ -83,21 +131,26 @@ sh scripts/check_no_network_in_core.sh
 
 # 2. the Android module — ALL VERIFIED WORKING 2026-10-03
 sh gradlew projects                              # 6 projects incl. :app-android
-sh gradlew :app-android:assembleDebug            # 2 APKs: 33.39 MB (arm64), 26.56 MB (v7a)
-sh gradlew :app-android:assembleRelease          # 2 APKs: 22.97 MB (arm64), 16.14 MB (v7a)
-sh gradlew :app-android:checkApkSize             # NFR-S1 gate: 4 artefacts, all ≤ 35.0 MB
+sh gradlew :app-android:assembleDebug            # 1 universal APK: app-android-debug.apk (87.98 MB)
+sh gradlew :app-android:assembleRelease          # 1 universal APK: -unsigned.apk (77.55 MB)
+sh gradlew :app-android:bundleRelease            # OK -> app-android-release.aab (36.97 MB). THE PRODUCT.
+sh gradlew :app-android:sideloadApk              # 1-ABI sideload APK, arm64-v8a, 23.01 MB
+                                                #   (LOCAL TESTING ONLY — see §1a)
+sh gradlew :app-android:checkApkSize             # NFR-S1 gate: 4 containers, all within budget
 sh gradlew :app-android:lint
 # ⛔ sh gradlew :app-android:testDebugUnitTest   # FAILS — 160 compile errors (see §1)
 
 # 3. a device (SPEC §10 A2: one low-end 2 GB Android 10+, one mid) — NEVER DONE
 sh gradlew :app-android:installDebug             # no adb, no device: this has never run
+adb install -r app-android/build/outputs/apk/sideload/app-android-sideload.apk   # never run either
 adb logcat -s KASOTI                             # the scrubbed log; see field/FieldLog.kt
 
 # 4. the gates
-sh scripts/airplane_install_test.sh              # exit 1 (bundle-manifest placeholders);
-                                                 # --skip-bundle -> exit 2 at step D (no adb)
+sh scripts/airplane_install_test.sh              # exit 1 — NOT the bundle hashes: step A's container
+                                                #   check flags every universal APK and the .aab by
+                                                #   FILE size, which the ADR above says is not a
+                                                #   download. --skip-bundle -> exit 2 at step D.
 sh scripts/verify_bundle.sh                      # model hashes (I12) — correctly refuses
-# ⛔ sh gradlew :app-android:bundleRelease       # FAILS (AGP 8.9.2 x ABI splits) -> NO .aab
 # ⛔ sh gradlew bundleOffline                    # was never a task in this tree
 ```
 
@@ -121,7 +174,7 @@ Still open, and not fixable by compiling:
 |---|---|---|
 | **`MacroStage` classifier binding** | `capture/CameraController.kt` | The SVM weights loader is **not implemented**: `MacroStage` is constructed with `classifier = null`, so every patch classifies `UNKNOWN` and the macro layer abstains. Compiles; wrong at runtime by construction. See §6 |
 | **`:app-android:test` does not compile** | `ml/BlazeFaceDesktopParityTest.kt`, `ml/BlazeFaceInputTest.kt` | They import `:platform`'s JVM classes from an Android test source set. `verify-offline.sh` runs both suites on a bare JVM instead |
-| **No `.aab`** | build config | AGP 8.9.2 × `splits.abi`. APK-only delivery |
+| **No `.aab` had ever been built** | build config | **Resolved 2026-10-03.** `splits.abi` was the cause and it is gone; `bundleRelease` now succeeds and produces the 36.97 MB shipping bundle. Delivery is bundle-first, APK-second (the sideload APK in §1a is the local-testing path) |
 
 ### What is unit-tested (201 tests via `verify-offline.sh`)
 
@@ -316,16 +369,44 @@ Structural, not a promise:
 
 ---
 
-## 8. Size budget (NFR-S1, APK ≤ 35 MB)
+## 8. Size budget (NFR-S1, per-device download ≤ 35 MB)
 
-`:app-android:checkApkSize` is the module-level hook: it depends on `assembleRelease`, finds the
-largest `.apk` and `.aab` under `build/outputs`, prints the size, and **fails** above 35 MB. It
-measures the artefact; nothing in the module estimates a size, because an estimate that can be
-wrong in the optimistic direction is worse than no gate.
+`:app-android:checkApkSize` is the module-level hook. It depends on `bundleRelease`,
+`assembleDebug`, `assembleRelease` **and `assembleSideload`**, measures every container it finds
+under `build/outputs`, and **fails** above 35 MB. It measures the artefact; nothing in the module
+estimates a size, because an estimate that can be wrong in the optimistic direction is worse than
+no gate.
 
-`.github/workflows/ci.yml` already runs an equivalent inline check when a runner has an SDK.
-The module task exists so the gate also runs locally and so the budget lives next to what it
-constrains. Wiring it into CI is a one-line workflow change that the lead owns.
+⚠️ **It gates the per-device slice, not the file.** The budget is applied to the *compressed
+worst-case per-device slice* — the bytes one phone actually downloads — and the container's own
+file size is printed but **not** gated. That distinction is not pedantry: an `.aab` is never
+installed as a file (Play slices it server-side), and an APK stores the per-ABI `.so` files
+**STORED** while the `.aab` DEFLATEs the same bytes, so the universal APK is ~2.5x its own
+download. Measured 2026-10-03:
+
+| container | file size | worst per-device slice | gated? |
+|---|---|---|---|
+| `app-android-release.aab` (**the product**) | 36.97 MB | **14.60 MB** (x86) | YES |
+| `app-android-release-unsigned.apk` | 77.55 MB | 25.52 MB (x86) | YES |
+| `app-android-sideload.apk` (arm64-v8a) | 23.01 MB | 22.91 MB (arm64-v8a) | YES |
+| `app-android-debug.apk` | 87.98 MB | 35.90 MB (x86) | ADVISORY |
+
+The debug row is the one carve-out, and it is a carve-out with a stated cause and a number rather
+than a deleted check: `isMinifyEnabled = false` for debug means its shared payload is 14.59 MB
+against release's 4.21 MB while the native payload is identical, so it lands 0.90 MB over on a
+file nobody ships. It is reported loudly on every run and counted in the summary. Full reasoning
+in the `checkApkSize` KDoc in `build.gradle.kts`.
+
+The sideload APK is **gated, not exempted** — and it can be, because `initWith(release)` gives it
+the shipping dex and resources (22.91 MB) and because a single-ABI APK is the one container whose
+file size and per-device slice nearly coincide. Had it been built debug-shaped its slice would be
+33.29 MB, inside 1.71 MB of the budget on the same native payload release ships, and gating that
+would have produced a red build meaning nothing. That trade is written down in the KDoc rather than
+decided silently.
+
+`.github/workflows/ci.yml` calls this task when a runner has an SDK. ⚠️ Because `assembleSideload`
+is now one of its dependencies, that step builds one extra R8-minified APK; the CI file is owned
+elsewhere and was not touched here.
 
 The arithmetic that matters, from DESIGN.md §6: ML Kit text ~10 MB, ML Kit barcode ~3 MB,
 TFLite runtime ~2 MB, Compose ~2 MB, CameraX ~2 MB, the two model files ≤ 5.3 MB. That is ~24 MB

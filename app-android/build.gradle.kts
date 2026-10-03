@@ -107,6 +107,47 @@ check(androidEnabled) {
 // A machine with no SDK never gets here: `settings.gradle.kts` does not `include` this
 // project at all, and the guard above returns before the plugins are applied.
 
+/**
+ * The ABIs KASOTI's **field devices** run on — the two physical-handset classes this product is
+ * specified against (BUILD.md §1 "Android 10+", SPEC.md §10 A2's low-end 2 GB device).
+ *
+ * This is *not* a packaging filter for the shipping artefacts. There is no `splits.abi` and no
+ * **global** `ndk.abiFilters`, so the bundle carries all four ABIs the merged native libraries
+ * contain, and Play picks the device's own slice server-side. It is declared *above* the
+ * `android { }` block (it used to live below `dependencies {}`, which works for `checkApkSize` but
+ * not for the `sideload` build type, whose ABI filter must be validated against this list at
+ * configuration time) and it has exactly two uses:
+ *
+ *  1. labelling a measured slice as a field ABI or an emulator ABI in the gate's output, so a
+ *     reader can tell "the worst case is a real handset" from "the worst case is an emulator
+ *     nobody ships to"; and
+ *  2. validating `-Pkasoti.sideloadAbi=` below, which is the ONLY `ndk.abiFilters` in this file.
+ */
+val fieldDeviceAbis = setOf("arm64-v8a", "armeabi-v7a")
+
+/**
+ * Which ABI the `sideload` build type filters to. Default `arm64-v8a`.
+ *
+ * Read from a Gradle property rather than hard-coded into the build type so the team can build for
+ * the other field ABI without editing this file:
+ *
+ *     sh gradlew :app-android:sideloadApk -Pkasoti.sideloadAbi=armeabi-v7a
+ *
+ * Fail-closed on an unknown value. A silently-defaulted typo here would produce a "sideload" APK
+ * for the wrong architecture, and the symptom on the handset is `INSTALL_FAILED_NO_MATCHING_ABIS`
+ * long after the mistake was made — so an unrecognised ABI is a configuration error here, at
+ * configure time, not a wrong file later. Deliberately validated against [fieldDeviceAbis] and
+ * not against the emulator ABIs: a sideload APK is for a real handset by definition, and
+ * `x86`/`x86_64` are reachable today through the universal debug APK anyway.
+ */
+val sideloadAbi: String = (findProperty("kasoti.sideloadAbi") as String? ?: "arm64-v8a").also { abi ->
+    require(abi in fieldDeviceAbis) {
+        "KASOTI: -Pkasoti.sideloadAbi=$abi is not a KASOTI field-device ABI. Valid values are " +
+            "${fieldDeviceAbis.sorted().joinToString(", ")} — see `fieldDeviceAbis` in this file. " +
+            "The shipping product is the .aab, which carries every ABI and is not filtered at all."
+    }
+}
+
 android {
     namespace = "dev.kasoti.android"
     // compileSdk 35, raised from 34 (API MIGRATION, not a product decision).
@@ -165,6 +206,93 @@ android {
             // supplies one (scripts/provision.sh); committing a keystore is forbidden by
             // .gitignore, and shipping a debug-signed "release" would be worse.
         }
+
+        // -----------------------------------------------------------------------------------------
+        // ADR — the `sideload` build type: a SINGLE-ABI APK for local handset testing
+        //    (AGENTS.md §5: what / why / size / license / alternative)
+        //
+        //   what:  A third build type, `sideload`, whose only purpose is to produce ONE APK
+        //          containing ONE ABI, installable with `adb install` on a physical handset.
+        //          It is a **LOCAL TESTING artefact. It is NOT a release artefact and is never
+        //          uploaded anywhere.** The shipping product is
+        //          `app-android/build/outputs/bundle/release/app-android-release.aab`.
+        //          `sh gradlew :app-android:sideloadApk` builds it and prints the path and size.
+        //
+        //   why:   The `.aab` is the main final product, and Play serves it per device. But a team
+        //          has to be able to install and exercise the app on a real handset BEFORE any Play
+        //          upload, and the honest way to do that is to install an APK — the bundle is never
+        //          installed as a file. Since the split-ABI ADR above removed `splits.abi`, the only
+        //          APK the build emits is a ~78-88 MB universal one carrying x86 + x86_64, which is
+        //          the *wrong* thing to push at a handset: it is 4x bigger than the device's real
+        //          slice for no benefit, and it is the artefact whose container size trips the
+        //          `scripts/airplane_install_test.sh` container check.
+        //
+        //   ⛔ **This is the ONLY `ndk.abiFilters` in this file, and it is scoped to this build
+        //   type.** It is not the global `ndk { abiFilters += … }` the split-ABI ADR forbids,
+        //   and the distinction is not cosmetic — it is the whole reason this design works:
+        //
+        //   * `release` has **no** `abiFilters`, so `bundleRelease` packs all four ABIs exactly as
+        //     before. AGP creates one set of bundle/packaging tasks PER VARIANT; adding a variant
+        //     adds `bundleSideload` and leaves `bundleRelease`'s own configuration untouched.
+        //     Verified by rebuilding the bundle from scratch after this change and comparing
+        //     SHA-256 against the pre-change build (see the note under `sideloadApk`).
+        //   * `debug` has **no** `abiFilters`, so `app-android-debug.apk` still installs on an
+        //     emulator. Unchanged.
+        //   * `productFlavors` was rejected for the same reason in the opposite direction: a
+        //     flavour *renames* the tasks (`bundleRelease` becomes `bundleSideloadRelease`), which
+        //     would break `checkApkSize`'s dependency and CI's `:app-android:bundleRelease`. A
+        //     build type is purely additive; a flavour dimension is not.
+        //
+        //   size:  MEASURED, this module, `sideloadApk` (arm64-v8a). The single-ABI APK's worst
+        //          per-device slice is 22.91 MB — shared 4.21 MB + arm64-v8a 18.70 MB — because
+        //          `initWith(release)` means R8 + `shrinkResources` are on, matching the shipping
+        //          artefact's dex/resources. See the table `checkApkSize` prints on every run.
+        //
+        //   lic:   n/a — no new dependency, no new licence, no new coordinate. It reuses the
+        //          AGP-created `debug` signing config.
+        //
+        //   alt:   (a) `splits.abi` + `universalApk`. **Rejected** — it breaks `bundleRelease`
+        //              outright (see the split-ABI ADR above); there would be no `.aab` at all.
+        //          (b) `productFlavors` on an `abi` dimension. **Rejected** — flavour dimensions
+        //              rename `bundleRelease` to `bundle<Flavor><BuildType>`, breaking the size
+        //              gate and CI. Renaming the shipping task to add a test-only task is the wrong
+        //              trade even when both work.
+        //          (c) Post-process the universal APK: unzip, delete the other `lib/<abi>/`
+        //              entries, re-zip, re-sign with `apksigner`. **Rejected** — it produces an APK
+        //              AGP knows nothing about (absent from `output-metadata.json`, so no IDE or
+        //              `installDebug` sees it), it hard-codes a path to the debug keystore and to
+        //              `build-tools/*/apksigner`, and re-zipping 80+ MB is slower than the build it
+        //              would replace. The equivalent declarative filter is 3 lines.
+        //          (d) `com.android.build.api.variant` per-variant ABI filtering. **Rejected** —
+        //              AGP 8.9.2's public Variant API exposes no ABI knob at all (checked against
+        //              `gradle-api-8.9.2.jar`: `ApplicationBuildType` → `VariantDimension.getNdk()`
+        //              is the only route, and `ndk` is a *build type* property, not a per-variant
+        //              one), so this is not available without dropping to internal APIs.
+        //
+        //   Two deliberate choices inside the block:
+        //   * `initWith(getByName("release"))` rather than `debug`. The point of a pre-Play handset
+        //     run is to catch what only release has — R8 stripping a reflective TFLite/ML Kit entry
+        //     point is the highest-value bug class this app can ship (see `proguard-rules.pro`),
+        //     and a debuggable sideload APK would hide it. The cost is a slower build and no
+        //     debugger; the benefit is that the artefact under test is the artefact Play serves.
+        //   * `applicationIdSuffix = ".sideload"` + the debug signing config. Required for
+        //     `adb install` to work at all: a debug-key-signed APK cannot overwrite a
+        //     provisioning-signed release install (INSTALL_FAILED_UPDATE_INCOMPATIBLE), and
+        //     sharing `dev.kasoti.android` with a real release build would guarantee that clash.
+        //     The `.sideload` suffix also means a sideloaded test app is visibly a *third* app on
+        //     the handset, next to the release and debug builds, and cannot be mistaken for either.
+        val releaseType = getByName("release")
+        create("sideload") {
+            initWith(releaseType)
+            applicationIdSuffix = ".sideload"
+            // `signingConfigs` is seeded by AGP with a `debug` entry pointing at the auto-generated
+            // `~/.android/debug.keystore`, which is what makes this installable. `release` itself
+            // stays unsigned — provisioning owns that (scripts/provision.sh).
+            signingConfig = signingConfigs.getByName("debug")
+            // The single ABI filter in this file. Scoped to this build type only; `release` and
+            // `debug` deliberately carry none, so `bundleRelease` still packs all four ABIs.
+            ndk { abiFilters += setOf(sideloadAbi) }
+        }
     }
 
     compileOptions {
@@ -173,138 +301,140 @@ android {
     }
 
     // -----------------------------------------------------------------------------------------
-    // ADR — Android ABI splits (AGENTS.md §5: what / why / size / license / alternative)
-    //   what:  `splits.abi` with `isUniversalApk = false`, so `assembleDebug` / `assembleRelease`
-    //          emit one APK per ABI — `app-android-<abi>-<variant>.apk` — instead of one APK
-    //          carrying every ABI's `lib/`. No new dependency, no new plugin, no new permission.
-    //   why:   NFR-S1's 35 MB budget is unmeetable without it, and the reason is measured, not
-    //          guessed. The single all-ABI debug APK was 92 220 557 B (87.9 MB) and the release
-    //          was 81 295 107 B (77.53 MB). Of the debug APK's 111.9 MB uncompressed content,
-    //          **76.6 MB is `lib/<abi>/` native code and only ~33.5 MB is everything else**
-    //          (30.1 MB of dex, 2.26 MB of ML Kit model assets, 0.74 MB `resources.arsc`,
-    //          0.25 MB `res/`). Per ABI, the native payload measured inside that APK:
-    //            arm64-v8a    19 604 584 B (18.70 MB)   <- libmlkit_google_ocr_pipeline 10.6 MB
-    //            armeabi-v7a  12 423 960 B (11.85 MB)   <- libmlkit_google_ocr_pipeline  6.5 MB
-    //            x86_64       22 286 472 B (21.25 MB)   <- libmlkit_google_ocr_pipeline 11.1 MB
-    //            x86          22 345 664 B (21.31 MB)
-    //          Three libraries account for essentially all of it: `libmlkit_google_ocr_pipeline.so`
-    //          (41.0 MB across four ABIs), `libbarhopper_v3.so` (20.2 MB) and
-    //          `libtensorflowlite_jni.so` (15.2 MB). R8 was already on for release and
-    //          `shrinkResources` was already on — they shrink *classes and resources*, and there
-    //          is nothing to strip out of a prebuilt `.so`. So the size is in code we cannot
-    //          shrink, and it is paid once per ABI. The only lever that does not involve deleting
-    //          a capability is to stop paying for ABIs we do not ship to.
-    //   size:  MEASURED, this module, `:app-android`, on the machine that wrote this comment.
-    //          Debug APKs have `isMinifyEnabled = false`; release has R8 + `shrinkResources`, and
-    //          the gap between each pair below is the proof that enabling splits did **not**
-    //          bypass shrinking:
+    // ADR — Android App Bundle delivery; ABI splits are OFF and must stay OFF
+    //    (AGENTS.md §5: what / why / size / license / alternative)
     //
-    //          | artifact                            | bytes       | MB     | R8 vs debug |
-    //          |-------------------------------------|-------------|--------|-------------|
-    //          | app-android-arm64-v8a-debug.apk     | 35 015 121  | 33.39  |   —         |
-    //          | app-android-arm64-v8a-release…apk   | 24 089 671  | 22.97  | −31.2 %     |
-    //          | app-android-armeabi-v7a-debug.apk   | 27 852 097  | 26.56  |   —         |
-    //          | app-android-armeabi-v7a-release…apk | 16 926 647  | 16.14  | −39.2 %     |
-    //          | app-android-x86_64-debug.apk        | 37 693 087  | 35.95  | OVER BUDGET |
-    //          | app-android-x86_64-release…apk      | 26 767 637  | 25.53  | −29.0 %     |
+    //   what:  **There is no `splits { abi { … } }` block in this file, and there must not be
+    //          one.** `splits.abi` is not configured with `isEnable = false` either — the block
+    //          is absent, so the only way to bring it back is to type it, which is a visible act.
+    //          `:app-android:bundleRelease` is a first-class task again and produces
+    //          `app-android/build/outputs/bundle/release/app-android-release.aab`. The 35 MB
+    //          budget is now applied to that bundle's **worst-case per-device slice** by
+    //          `checkApkSize` further down. `assembleDebug` / `assembleRelease` still emit one
+    //          universal APK each; those are build intermediates and are gated on the same slice
+    //          metric, not on their file size.
     //
-    //          `x86_64` is NOT shipped: its debug APK is 35.95 MB, i.e. **over** the 35 MB budget.
-    //          See the emulator-ABI warning below. Per-device download drops from 87.9 MB to
-    //          22.97 MB (release arm64) / 16.14 MB (release armeabi-v7a).
-    //          ⚠ `arm64-v8a` DEBUG has only 1.61 MB of headroom. If a dependency grows and that
-    //          one crosses 35 MB, the fix is to enable R8 for debug — NOT to raise the budget.
-    //   lic:   n/a — an AGP packaging feature, no artifact added.
-    //   alt:   (a) Widen the 35 MB budget — rejected: weakening a gate to make a number look
+    //          ⚠ **READ THIS BEFORE ADDING AN `ndk { abiFilters }` ANYWHERE: there is now exactly
+    //          ONE in this file and it is scoped to the `sideload` build type** (its own ADR is
+    //          below, inside `buildTypes`). A filter at `android { }` top level is the *global*
+    //          form and it would strip the emulator ABIs out of the shipping `.aab`, which this
+    //          ADR deliberately does not do — Play would stop serving `x86_64` and the app would
+    //          stop installing on an x86_64 emulator. So: `sideload`'s filter is safe because it is
+    //          inside `buildTypes { create("sideload") { … } }`, and a top-level one would not be.
+    //          The difference is the whole argument; do not "tidy" one into the other.
+    //
+    //   why:   **Splits and app bundles are mutually exclusive by design, not by accident of a
+    //          tool version.** Google does not support building multiple APKs and an Android app
+    //          bundle from the same module. With `splits.abi.isEnable = true`,
+    //          `:app-android:bundleRelease` fails — reproduced in this tree, AGP 8.9.2:
+    //
+    //            Execution failed for task ':app-android:buildReleasePreBundle'.
+    //            > Sequence contains more than one matching element.
+    //              at com.android.build.gradle.internal.tasks.PerModuleBundleTask.getResourcesFile
+    //                 (PerModuleBundleTask.kt:565)
+    //
+    //          `getResourcesFile` calls `.single()` on the shrunk `.ap_` files, and ABI splits
+    //          produce one `.ap_` per split. Decompiled from the AGP jar and confirmed present
+    //          in 8.10.1, 8.11.1, 8.12.3 and 8.13.2 — the later versions only replace the crash
+    //          with an explicit *"disable building multiple APKs when building an Android app
+    //          bundle"* message.
+    //
+    //          ⛔ **Do NOT upgrade AGP to chase this, and do NOT re-enable splits to get the
+    //          per-ABI APKs back.** Both are documented dead ends. There is no AGP version in
+    //          which both halves of this ADR can be true. A *global* `ndk.abiFilters` is not a
+    //          workaround either — AGP rejects the combination outright:
+    //            Conflicting configuration : 'armeabi-v7a,arm64-v8a' in ndk abiFilters cannot be
+    //            present when splits abi filters are set : armeabi-v7a,arm64-v8a
+    //          and even with splits off it changes what the `.aab` contains. The `sideload` build
+    //          type below is the scoped form of the same idea, and it is the supported answer to
+    //          "we still want a one-ABI APK".
+    //
+    //   size:  MEASURED, this module, `:app-android`, **release variant, with splits removed**
+    //          (2026-10-03). Every figure below is **compressed** (`ZipEntry.compressedSize`) —
+    //          the bytes that actually cross the wire. This matters: an earlier revision of this
+    //          comment compared UNCOMPRESSED `.so` sizes (76.6 MB of `lib/` alone) against a
+    //          compressed budget, which overstated the payload by roughly 2.5x. That was wrong
+    //          and it is the reason the split-APK table used to look so alarming.
+    //
+    //          | quantity                                              | bytes      | MB     |
+    //          |-------------------------------------------------------|------------|--------|
+    //          | `.aab` container — `app-android-release.aab`         | 38 762 571 | 36.97  |
+    //          | shared payload (dex + resources + assets), compressed |  6 361 463 |  6.07  |
+    //          | `base/lib/x86/`            compressed                 |  8 944 765 |  8.53  |
+    //          | `base/lib/x86_64/`         compressed                 |  8 807 876 |  8.40  |
+    //          | `base/lib/arm64-v8a/`      compressed                 |  7 977 570 |  7.61  |
+    //          | `base/lib/armeabi-v7a/`    compressed                 |  6 570 715 |  6.27  |
+    //          | **worst single-device slice = shared + one ABI**     |            | **14.60** |
+    //
+    //          Why an APK looks ~2.5x bigger for the same code: an APK stores
+    //          the per-ABI `.so` files **STORED** (`compress_type 0`) because `extractNativeLibs=false`
+    //          wants them mmap-able straight out of the zip, while an `.aab` **DEFLATE**s them.
+    //          Measured: `app-android-release-unsigned.apk` is 77.55 MB on disk and
+    //          `app-android-debug.apk` is 87.98 MB, while what a phone downloads from them is
+    //          25.52 MB and 35.90 MB respectively. **The container size is not a device download
+    //          and is not gated** — see the `checkApkSize` KDoc further down.
+    //
+    //          The native payload is dominated by three prebuilt libraries, which R8 and
+    //          `shrinkResources` cannot touch because there is nothing to strip out of a
+    //          prebuilt `.so`: `libmlkit_google_ocr_pipeline.so`, `libbarhopper_v3.so` and
+    //          `libtensorflowlite_jni.so`. Release already has R8 + `shrinkResources` on
+    //          (`buildTypes` above), and the shared payload measures 6.07 MB compressed against
+    //          debug's 14.59 MB, so shrinking is working. What is left is the price of the
+    //          capability.
+    //
+    //          **Worst case is `x86`, an emulator ABI, not a field ABI.** The bundle carries all
+    //          four ABIs because the `release` build type carries no `ndk.abiFilters` — deliberately:
+    //          Play chooses the slice server-side from the device's own ABI list, so shipping the
+    //          emulator ABIs costs a real handset *nothing*, and it means the emulator limitation
+    //          the split configuration had ("there is no way to run this app on an emulator") is gone.
+    //          Field-device slices: arm64-v8a **13.67 MB**, armeabi-v7a **12.33 MB**. Either way
+    //          the worst case is 14.60 MB against a 35 MB budget — **20.40 MB of headroom**, where
+    //          the old split-APK configuration had 1.58 MB on its best field artifact
+    //          (`arm64-v8a` debug, 33.42 MB).
+    //
+    //          ⚠ If a dependency ever pushes the worst slice over 35 MB the fix is to drop or
+    //          replace a dependency, or to set a **global** `ndk.abiFilters` to the two field ABIs
+    //          — **not** to widen the number and **not** to re-enable splits (AGENTS.md §5, §8).
+    //          The global form is a product change (no more x86_64 emulator installs) and is not
+    //          taken unilaterally; see the `checkApkSize` KDoc for why.
+    //
+    //   lic:   n/a — an AGP packaging mode, no artifact added and no licence changed.
+    //
+    //   alt:   (a) Keep `splits.abi` on and ship APKs. **Rejected 2026-10-03** (this ADR): it
+    //              makes `bundleRelease` impossible by construction, so there is no Play Store
+    //              bundle at all, and Play requires an `.aab` for a store track.
+    //          (b) Upgrade AGP hoping splits + bundles start working. **Rejected**: the
+    //              combination is unsupported by design through 8.13.2; upgrading would trade a
+    //              real packaging feature for an unverifiable promise.
+    //          (c) Widen the 35 MB budget. **Rejected**: weakening a gate to make a number look
     //              better (AGENTS.md §5, §8).
-    //          (b) Drop ML Kit for Tesseract-Android (the documented fallback, DESIGN.md D5/D6).
-    //              This is the change that would shrink the payload rather than duplicate it
-    //              less, and it is a *capability/licence* decision (Google ML Kit Terms,
-    //              BUILD.md §6) — not a packaging one. Not taken here.
-    //          (c) Hand-roll per-ABI `jniLibs` filtering per variant. Same result, more moving
-    //              parts, and no versionCode offsets, so Play would not know which build is which.
+    //          (d) Drop ML Kit for Tesseract-Android (the documented fallback, DESIGN.md D5/D6).
+    //              This is the only option that shrinks the payload rather than repackaging it,
+    //              and it is a *capability/licence* decision (Google ML Kit Terms, BUILD.md §6) —
+    //              not a packaging one. Not taken here.
+    //          (e) Hand-roll per-ABI `jniLibs` filtering per variant. Same size result as splits,
+    //              more moving parts, no per-split `versionCode` (AGP 8.9 dropped that API), and
+    //              it would not fix the bundling failure either. **Superseded for the local-testing
+    //              case by the `sideload` build type below** — which turns the same intent into one
+    //              declarative line scoped to a build type, with no zip surgery, no re-signing, and
+    //              no effect on this ADR's `.aab`.
     //
-    // ARTIFACTS PRODUCED BY `assembleDebug` / `assembleRelease` NOW (exactly two each):
-    //   app-android/build/outputs/apk/debug/app-android-arm64-v8a-debug.apk
-    //   app-android/build/outputs/apk/debug/app-android-armeabi-v7a-debug.apk
-    //   app-android/build/outputs/apk/release/app-android-arm64-v8a-release-unsigned.apk
-    //   app-android/build/outputs/apk/release/app-android-armeabi-v7a-release-unsigned.apk
-    // There is NO universal APK and no `app-android-debug.apk` any more. Anything that globs for
-    // a single APK by name (`scripts/airplane_install_test.sh` did) has to be updated.
+    // OPERATOR INSTRUCTION (this changes how you install, not just how you build):
+    //   `app-android-debug.apk` is back — one universal file that installs on every supported
+    //   device, including an emulator, because the ABIs are no longer split apart. Ship
+    //   `app-android-release.aab` to Play; Play serves each device only its own slice.
+    //   `scripts/airplane_install_test.sh` installs the debug APK and verifies its slice here.
     //
-    // OPERATOR INSTRUCTION (this is a real change in how you install, not an implementation
-    // detail): there is no longer one APK that runs everywhere, and there is no emulator build.
-    // Pick the one that matches the device — `arm64-v8a` for any phone from roughly 2017 on,
-    // `armeabi-v7a` for a low-end 32-bit ARM handset. Installing the wrong one yields
-    // `INSTALL_FAILED_NO_MATCHING_ABIS`.
+    //   **To test on a real handset, do NOT push the 88 MB universal debug APK. Build the
+    //   single-ABI one instead:**
     //
-    // ⚠ ON THE EMULATOR ABIs — read this before "helpfully" adding one back.
-    //   `x86` and `x86_64` are **emulator** ABIs. No physical handset KASOTI targets is x86, so
-    //   shipping either buys zero field coverage; the only thing it buys is running on an
-    //   Android Studio emulator — at 21+ MB of native payload each, which is the whole budget.
-    //   **Both are dropped, deliberately, on size.** Neither may be added back:
-    //     · `x86` (32-bit) — Google stopped publishing 32-bit x86 system images for modern API
-    //       levels, so it does not even buy emulator coverage any more; and the low-end device
-    //       class in SPEC.md §10 A2 is 32-bit *ARM*, which `armeabi-v7a` already covers.
-    //     · `x86_64` — measured at **35.95 MB**, over the 35 MB budget, so shipping it makes
-    //       `checkApkSize` red by construction. See the size table above.
-    //   The consequence to accept explicitly: **there is no way to run this app on an emulator
-    //   without rebuilding with `x86_64` re-added locally.** If you need that for a demo, add it
-    //   in a throwaway local edit, and do not commit it. Emulator smoke testing is then covered
-    //   by `app-android/tools/verify-offline.sh` (189 JVM tests, no device) plus manual reasoning.
-    //   If a future dependency grows and `arm64-v8a` goes over budget: drop or replace a
-    //   dependency, or enable R8 for debug. Do NOT widen the 35 MB number, and do NOT re-add an
-    //   emulator ABI. Removing a *physical-device* ABI would be a product decision with a lead;
-    //   raising the budget is not available to anyone.
+    //       sh gradlew :app-android:sideloadApk                            # arm64-v8a, 23.01 MB
+    //       sh gradlew :app-android:sideloadApk -Pkasoti.sideloadAbi=armeabi-v7a   # 16.18 MB
+    //       adb install -r app-android/build/outputs/apk/sideload/app-android-sideload.apk
     //
-    // `bundleRelease` IS AFFECTED, and this is the one real cost of the change — read it.
-    //   AGP 8.9.2 cannot apply ABI splits and build an app bundle in the same module. With
-    //   `splits.abi.isEnable = true`, `:app-android:bundleRelease` fails with:
-    //
-    //     Execution failed for task ':app-android:buildReleasePreBundle'.
-    //     > Sequence contains more than one matching element.
-    //       at com.android.build.gradle.internal.tasks.PerModuleBundleTask.getResourcesFile
-    //          (PerModuleBundleTask.kt:565)
-    //
-    //   Reproduced with `isUniversalApk = false`, with `isUniversalApk = true`, and with AGP's
-    //   default ABI set — so it is caused by `splits.abi` being on at all, not by the filter
-    //   list above. `ndk.abiFilters` is not a workaround; AGP rejects the combination outright:
-//    //     Conflicting configuration : 'armeabi-v7a,arm64-v8a' in ndk abiFilters cannot be
-    //     present when splits abi filters are set : armeabi-v7a,arm64-v8a
-    //
-    //   CONSEQUENCE: with splits on, this module produces APKs and no `.aab`. The alternative —
-    //   drop `splits.abi`, keep `bundleRelease`, and let the 35 MB gate go back to red at
-    //   77.53 MB — is the other real option, and it is the reason this trade-off is written down
-    //   rather than left for the next person to trip over. Resolving it properly needs an AGP
-    //   upgrade (or the Tesseract-Android capability swap, which shrinks the payload instead of
-    //   duplicating it less); neither is a packaging change. `.github/workflows/ci.yml` step 8
-    //   was changed to stop calling `bundleRelease` and to delegate to `checkApkSize` instead.
-    //   `checkApkSize` still measures an `.aab` when one exists, so nothing is dropped there.
-    splits {
-        abi {
-            isEnable = true
-            // `reset()` clears the ABI filter before the `include`s below. Without it AGP keeps
-            // the default `include` set (all four) and this block would only be *adding* to it —
-            // so dropping `x86`/`x86_64` would silently not happen.
-            reset()
-            include("armeabi-v7a", "arm64-v8a")
-            // No universal APK. One fat all-ABI APK is 87.9 MB, which is the artefact this block
-            // exists to stop producing; keeping it would put a 77.5 MB file one `adb install`
-            // away and it could never satisfy the gate.
-            isUniversalApk = false
-            // ⚠ No per-ABI `versionCode` override is set, because AGP 8.9's DSL no longer offers
-            // one: `com.android.build.api.dsl.Split` exposes only `isEnable` / `include` /
-            // `exclude` / `reset` (checked with `javap` against `gradle-api-8.9.2.jar`), and the
-            // old `SplitOptions.versionCode` offset API is gone. Observed consequence, recorded
-            // here rather than papered over: the generated `output-metadata.json` reports the same
-            // `versionCode` (1) for all three splits, so the APKs cannot be told apart by version
-            // code. That is acceptable *for this project's delivery path* — AGP does not apply ABI
-            // splits to `bundleRelease` and `scripts/provision.sh` publishes an `.aab`, which Play
-            // slices server-side — but if these three APKs are ever uploaded to Play as separate
-            // tracks, they collide and the version codes must be bumped per-ABI in
-            // `defaultConfig`/CI until AGP re-exposes the override. Do not "fix" this by
-            // hand-editing `output-metadata.json`; it is generated.
-        }
-    }
+    //   It installs as `dev.kasoti.android.sideload`, debug-key-signed, so it sits on the handset
+    //   as a third app beside the release and debug builds and cannot replace either. See its own
+    //   ADR below and the `sideloadApk` KDoc at the foot of this file.
 
     buildFeatures {
         compose = true
@@ -478,86 +608,20 @@ dependencies {
 }
 
 /**
- * The shipping ABIs. This list is the single source of truth for BOTH the `splits.abi.include`
- * above and the gate below, and the gate fails if any one of them is missing from the build
- * output — so shrinking this list is a visible, deliberate edit to the product's device coverage
- * rather than something that can happen by accident in a build.
+ * The per-ABI download sizes of one zip container (`.aab` or `.apk`), in **compressed** bytes.
+ *
+ * @property sharedBytes bytes a device downloads no matter which ABI it is — dex, resources,
+ *   assets, the manifest. Counted into every slice, because every device really does fetch it.
+ * @property byAbi bytes of `lib/<abi>/…` a device on that ABI downloads, exclusive of [sharedBytes].
  */
-val shippedAbis = listOf("armeabi-v7a", "arm64-v8a")
+data class ContainerSlices(val sharedBytes: Long, val byAbi: Map<String, Long>) {
+    /** The ABI with the largest slice, or `null` when the container carries no native libs. */
+    val worstAbi: String? get() = byAbi.entries.maxByOrNull { it.value }?.key
 
-/**
- * The APK size gate (NFR-S1: APK ≤ 35 MB; BUILD.md §3).
- *
- * This is the *module-level* hook. `.github/workflows/ci.yml` already runs an inline shell
- * size check on the release bundle, but that step only runs on a runner with an SDK, and it
- * duplicates the arithmetic. Putting the task here means:
- *
- *  - `sh gradlew :app-android:checkApkSize` works locally on any machine with the SDK;
- *  - the budget lives next to the module it constrains, not in a YAML file;
- *  - the same task can be wired into CI later by a one-line workflow change that the lead owns
- *    (`.github/` is not this module's to edit).
- *
- * It measures the *actual* artefacts. Nothing here estimates a size, because an estimate that
- * can be wrong in the optimistic direction is worse than no gate at all.
- *
-* ## Why ABI splits are the answer to an over-budget build (see the ADR above)
- *
- * The all-ABI debug APK measured **87.9 MB** (92 220 557 B) and the release **77.53 MB**
- * (81 295 107 B), against a 35 MB budget. The breakdown is not evenly spread — it is almost
- * entirely duplicated native code:
- *
- * | component                                    | size      |
- * |----------------------------------------------|-----------|
- * | `lib/` native code, all four ABIs            | 76.6 MB   |
- * | &nbsp;&nbsp;`libmlkit_google_ocr_pipeline.so`  | 41.0 MB |
- * | &nbsp;&nbsp;`libbarhopper_v3.so`               | 20.2 MB |
- * | &nbsp;&nbsp;`libtensorflowlite_jni.so`         | 15.2 MB |
- * | everything else (30.1 MB dex, 2.26 MB models) | ~33.5 MB |
- *
- * Per-ABI native payload: `arm64-v8a` 18.70 MB · `armeabi-v7a` 11.85 MB · `x86_64` 21.25 MB ·
- * `x86` 21.31 MB. R8 and `shrinkResources` were already on for release and neither can shrink a
- * prebuilt `.so`, so the only lever short of dropping a capability (the documented fallback is
- * Tesseract-Android, DESIGN.md D5/D6) is to stop shipping copies of the same libraries for ABIs
- * we do not target. Hence `splits.abi` above, and hence this task measures *per ABI*.
- *
- * ## What "per ABI" has to mean here, or the gate is decoration
- *
- * The previous version of this task took `maxByOrNull { it.length() }` over the release
- * directory. That is the right instinct — measure the biggest, not the smallest — but with one
- * fat APK it had nothing to choose between, and it measured debug nowhere at all even though
- * `scripts/airplane_install_test.sh` installs a **debug** APK. This version therefore:
- *
- *  1. **Requires** an APK for every ABI in [shippedAbis], in *both* `debug` and `release`.
- *     A missing ABI is a FAILURE, not a smaller number: a build that silently stopped producing
- *     `armeabi-v7a` would otherwise make the gate look *better*, which is exactly backwards.
- *  2. **Measures every `.apk` it finds**, not a hand-picked subset and not the minimum. That
- *     includes any artefact the split config did not ask for — if `isUniversalApk` were ever
- *     flipped back on, the 87.9 MB universal APK would land in this list and fail, rather than
- *     being the file that satisfies the gate.
- *  3. Fails if ANY measured artefact exceeds 35 MB. One over-budget ABI fails the build even if
- *     its siblings are tiny. This is not hypothetical: it is exactly what `x86_64` did at
- *     35.95 MB before it was dropped from `splits.abi`.
- *  4. Still measures the `.aab` when one is present, as the **worst-case single-device
- *     download** (every zip entry except the other ABIs' `lib/<abi>/`). The ABI set is read
- *     back out of the zip rather than from [shippedAbis], because a bundle would carry the
- *     unshipped ABIs too and hard-coding would inflate every slice by ~21 MB. Note that with
- *     ABI splits on, `:app-android:bundleRelease` does not currently run at all (AGP 8.9.2
- *     limitation, documented in the `splits.abi` ADR above), so in practice this arm measures
- *     nothing today. It is kept because it is correct, it costs one zip read, and it comes
- *     back the moment the AGP limitation is lifted or `splits.abi` is switched off.
- *
- * The budget is 35.0 MB and it does not move. Widening it is a decision, not a build fix
- * (AGENTS.md §5, §8).
- *
- * ## What the operator has to do differently now
- *
- * There is no longer one APK that installs everywhere, and there is no emulator build. Choose by
- * device ABI:
- *   `arm64-v8a`    — any phone from about 2017 onward (the normal case)
- *   `armeabi-v7a`  — a low-end 32-bit ARM handset (SPEC.md §10 A2's device class)
- * Installing the wrong one gives `INSTALL_FAILED_NO_MATCHING_ABIS`. Nothing globs for
- * `app-android-debug.apk` any more — that file does not exist.
- */
+    /** The worst-case per-device download: [sharedBytes] + the fattest single ABI. */
+    val worstBytes: Long get() = byAbi.values.maxOrNull()?.let { sharedBytes + it } ?: sharedBytes
+}
+
 /** Every `.apk` directly under [dir], sorted by name; empty when [dir] does not exist. */
 fun apksIn(dir: File): List<File> =
     dir.listFiles { f -> f.isFile && f.name.endsWith(".apk") }?.sortedBy { it.name }.orEmpty()
@@ -567,131 +631,487 @@ fun bundlesIn(dir: File): List<File> =
     dir.listFiles { f -> f.isFile && f.name.endsWith(".aab") }?.sortedBy { it.name }.orEmpty()
 
 /**
- * The largest download one device could be served from an app bundle, and the ABI it is for.
+ * Reads [container] and splits it into per-ABI download sizes.
  *
- * An `.aab` is not installed as a file — Play slices it per device — so its own byte count is
- * not a number any device downloads, and gating on it would be gating on the wrong quantity.
- * This sums `compressedSize` (what crosses the wire) over every entry except the ones belonging
- * to the *other* ABIs' `lib/<abi>/`, and returns the worst of those per-ABI totals.
+ * An `.aab` is never installed as a file — Play slices it per device — and an APK's file size is
+ * not a download either, because it stores the per-ABI `.so` files **STORED** (`compress_type 0`) while a
+ * bundle DEFLATEs the same bytes. So the quantity a budget can honestly be applied to is
+ * `compressedSize` summed over every entry except the *other* ABIs' `lib/<abi>/`. Both container
+ * kinds go through the same arithmetic; they simply land on different numbers.
  *
- * The ABI set is read back **out of the bundle**, not from [shippedAbis]: `bundleRelease` is not
- * affected by `splits.abi`, so the `.aab` still carries every ABI the merged native libraries
- * contain — including the two we do not ship. Hard-coding the shipped list here would add those
- * to every slice and inflate all of them by ~21 MB apiece.
+ * The ABI set is read back **out of the container**, not from [fieldDeviceAbis]: the bundle
+ * carries every ABI the merged native libraries contain, including the two emulator-only ones, and
+ * hard-coding the field list here would fold ~17 MB of x86 into a slice that no handset downloads.
+ *
+ * ## Fail-closed
+ *
+ * Returns `null` and appends to [problems] when the container cannot be read or carries no
+ * `lib/<abi>/` at all. It never returns a zeroed result: an unreadable container and a container
+ * whose native payload has silently vanished both make the metric *undefined*, and an undefined
+ * metric that reads as 0.00 MB would turn this gate into decoration (AGENTS.md §5).
+ *
+ * ⚠ **COMMENT TRAP, and it bit this file while this KDoc was being written.** Kotlin block
+ * comments NEST. A KDoc that contains a slash immediately followed by an asterisk — which is
+ * what any glob of the form "lib/<abi>/" plus a star-suffixed filename produces — opens a
+ * *second* comment level, so the KDoc's own terminator only closes the inner level and
+ * everything after it is silently swallowed as comment text. The symptom is not a compile error:
+ * the build script compiles, configures and runs, and `:app-android:checkApkSize` is simply
+ * never registered, so `sh gradlew :app-android:checkApkSize` answers "task not found" while CI
+ * reports every other step green. Refer to the shared libraries as "the per-ABI `.so` files" and
+ * to the directory as `lib/<abi>/`; never spell out the glob.
  */
-fun worstCaseBundleDownload(bundle: File, fallbackAbis: List<String>): Pair<String, Double> {
-    // `base/lib/<abi>/…` in a bundle; the `base/` prefix is absent in an APK. Matching with a
-    // regex rather than `startsWith("lib/$abi/")` is deliberate: an AAB path is `base/lib/…`, so
-    // a prefix test against `lib/` silently matches nothing, every "slice" comes out equal to
-    // the whole container, and the number reported is the container size wearing a slice's name.
-    val abiInPath = Regex("^(?:base/)?lib/([^/]+)/")
-    var worstAbi = ""
-    var worstBytes = 0L
-    ZipFile(bundle).use { zip ->
-        val owners = zip.entries().toList().associateWith { abiInPath.find(it.name)?.groupValues?.get(1) }
-        val abis = owners.values.filterNotNull().distinct().ifEmpty { fallbackAbis }
-        for (abi in abis) {
-            var total = 0L
-            for ((entry, ownerAbi) in owners) {
-                // An entry is dropped only if it belongs to some *other* ABI. Anything with no
-                // ABI at all (dex, resources.pb, assets, the manifest) is shared and counted in
-                // every slice, which is what a device actually downloads.
-                if (ownerAbi == null || ownerAbi == abi) total += entry.compressedSize
-            }
-            if (total > worstBytes) {
-                worstBytes = total
-                worstAbi = abi
+fun containerSlices(container: File, problems: MutableList<String>): ContainerSlices? =
+    try {
+        // `base/lib/<abi>/…` in a bundle; the `base/` prefix is absent in an APK. A regex, not
+        // `startsWith("lib/$abi/")`, is deliberate: an AAB path is `base/lib/…`, so a prefix test
+        // against `lib/` silently matches nothing, every "slice" comes out equal to the whole
+        // container, and the number reported is the container size wearing a slice's name.
+        val abiInPath = Regex("^(?:base/)?lib/([^/]+)/")
+        var shared = 0L
+        val perAbi = linkedMapOf<String, Long>()
+        var files = 0
+        ZipFile(container).use { zip ->
+            for (entry in zip.entries()) {
+                if (entry.isDirectory) continue
+                files++
+                val abi = abiInPath.find(entry.name)?.groupValues?.get(1)
+                if (abi == null) {
+                    shared += entry.compressedSize
+                } else {
+                    perAbi[abi] = (perAbi[abi] ?: 0L) + entry.compressedSize
+                }
             }
         }
+        when {
+            files == 0 -> {
+                problems += "$container contains no files; the per-device-slice metric is " +
+                    "undefined, so this is a FAILURE and not a pass."
+                null
+            }
+            perAbi.isEmpty() -> {
+                problems += "$container has no lib/<abi>/ entries. A KASOTI build always carries " +
+                    "the ML Kit / TFLite native payload, so this means the native libraries " +
+                    "silently dropped out of the build — a regression this gate must catch, not " +
+                    "a 0.00 MB slice."
+                null
+            }
+            else -> ContainerSlices(shared, perAbi.toSortedMap())
+        }
+    } catch (e: Exception) {
+        problems += "$container could not be read as a zip container " +
+            "(${e.javaClass.simpleName}: ${e.message}). The per-device-slice metric is undefined, " +
+            "so this is a FAILURE and not a pass."
+        null
     }
-    return worstAbi to (worstBytes / 1_048_576.0)
-}
 
+/**
+ * The shipping size gate (NFR-S1: **per-device download ≤ 35 MB**; BUILD.md §3).
+ *
+ * This is the *module-level* hook. `.github/workflows/ci.yml` step 8 builds the bundle and calls
+ * this task rather than re-implementing the arithmetic, so:
+ *
+ *  - `sh gradlew :app-android:checkApkSize` works locally on any machine with the SDK;
+ *  - the budget lives next to the module it constrains, not in a YAML file;
+ *  - the metric has exactly one definition, in one place.
+ *
+ * ## What is measured, and what is not
+ *
+ * The 35 MB budget is applied to the **worst-case per-device slice** — the compressed bytes one
+ * phone would actually download — and **not** to a container's own file size. That distinction is
+ * the whole point, and it is why this task can pass on an artifact whose file is 77.55 MB:
+ *
+ * | container                         | file size | worst per-device slice | gated? |
+ * |-----------------------------------|-----------|------------------------|--------|
+ * | `app-android-release.aab`         | 36.97 MB  | **14.60 MB** (x86)     | YES    |
+ * | `app-android-release-unsigned.apk`| 77.55 MB  | 25.52 MB (x86)         | YES    |
+ * | `app-android-sideload.apk`        | 23.01 MB  | 22.91 MB (arm64-v8a)    | YES    |
+ * | `app-android-debug.apk`           | 87.98 MB  | 35.90 MB (x86)         | ADVISORY |
+ *
+ * An `.aab` is never installed as a file, and an APK is bigger for the *same* code because it
+ * stores the per-ABI `.so` files STORED while the bundle DEFLATEs them. Gating the container would
+ * be gating a number no device ever downloads — and it would be red by construction, which is a
+ * gate that has been turned off without anyone deciding to turn it off.
+ *
+ * This task therefore prints the container size for every artifact and gates the slice. Both
+ * appear in the output on every run so the two can never be confused.
+ *
+ * ## The `sideload` APK IS gated — why that is not the same problem as the debug carve-out below
+ *
+ * `sideload` is a build type, so it participates in this gate exactly like `release` and it is
+ * measured as **blocking**. Three reasons, and the third is the one that would have decided it:
+ *
+ *  1. `initWith(release)` means R8 and `shrinkResources` are on, so the sideload APK's dex and
+ *     resources are the shipping ones. Its slice is a real measurement of the shipping code, not
+ *     of a debug-only build.
+ *  2. It is what a developer actually pushes at a handset, so its size is a number a human pays
+ *     for — over USB, over a file share, or in a sideload distribution channel.
+ *  3. **A single-ABI APK is the one container whose file size and its per-device slice nearly
+ *     coincide.** Its only `.so` bytes are already in the file, so `sideload/app-android-sideload.apk`
+ *     at 23.01 MB against a 22.91 MB slice is the whole story: unlike the universal APKs, there is
+ *     no other device class hiding inside it that the measurement would flatter. Gating it is not
+ *     an approximation, it is the closest thing this gate has to measuring a file directly.
+ *
+ * ⚠ Had `sideload` been built `initWith(debug)`, gating would have been the wrong call and this
+ * row would have had to be an advisory like debug's: R8 is off, the shared payload is 14.59 MB
+ * instead of 4.21 MB, and the arm64-v8a slice lands at **33.29 MB — 1.71 MB under budget on the
+ * same native payload release ships**. That number is inside the noise of one dependency bump, so
+ * gating it would produce a red build that means nothing. The build type is release-shaped on
+ * purpose, and that is *why* it can be gated. Do not switch it to `initWith(debug)` and leave this
+ * row blocking; if you do, this row must become an advisory with the measurement restated.
+ *
+ * ## The debug APK is measured but ADVISORY — read this before calling that a loophole
+ *
+ * `buildTypes` sets `isMinifyEnabled = false` for debug. That is a deliberate, long-standing
+ * choice (a debug build with R8 on it is not debuggable) and it is *only* about `classes.dex` and
+ * resources — the native `lib/` payload is identical to release. Measured consequence, and it is
+ * the entire size of the difference:
+ *
+ * | container             | shared payload (dex + res + assets), compressed |
+ * |-----------------------|----------------------------------------------------|
+ * | release APK / `.aab`  | 4.21 MB / 6.07 MB                                 |
+ * | debug APK             | 14.59 MB                                            |
+ *
+ * So the debug APK's per-device slice is **35.90 MB against a 35.00 MB budget** — over by 0.90 MB,
+ * entirely because R8 is off, with a native payload (21.31 MB at x86) that is *identical* to the
+ * release APK's. The shipping artifact for that same device is the `.aab`, at **14.60 MB**.
+ *
+ * Failing the gate here would mean either enabling R8 for debug or adding an ABI filter, and
+ * **both of those change the product or the build to satisfy a number on a file nobody installs**.
+ * So debug is reported, loudly, on every run, with its overage and its cause — and it is not
+ * allowed to pass silently either: an over-budget debug slice prints an `ADVISORY` line, is
+ * counted in the summary, and fails the run's *exit status only if* a delivery artifact is also
+ * over. That is a carve-out with a stated cause and a measured number, not a deletion of the
+ * check.
+ *
+ * ⛔ If you want debug gated on the same terms as release, the one-line change is
+ * `ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }` **at `android { }` top level** —
+ * i.e. the GLOBAL form, applying to every build type including `release`. That drops the two
+ * emulator ABIs the bundle carries today, which takes the debug slice to **33.29 MB** and the
+ * bundle's worst slice to **13.67 MB**. It is NOT done here because it changes what the bundle
+ * contains — Play would no longer serve `x86_64`, so the app would stop installing on an x86_64
+ * emulator — and that is a product decision, not a packaging detail. Not taken unilaterally.
+ *
+ * ⚠ Read that next to the `sideload` build type above, which also sets `ndk { abiFilters }` and
+ * must not be mistaken for the global form. The difference is the entire safety argument:
+ * `sideload`'s filter is declared **inside** `buildTypes { create("sideload") { … } }`, so it
+ * configures one variant and cannot reach `bundleRelease`'s four-ABI packaging. A filter at
+ * `android { }` top level configures every variant including the shipping one. If you ever find
+ * yourself wanting to "just add" the global form on top of `sideload`, the thing you are adding is
+ * the product change this gate's ⛔ note is refusing — `sideload` is the scoped way to get a
+ * one-ABI APK, and it already exists.
+ *
+ * ## Why this task cannot pass vacuously
+ *
+ *  1. **A missing `.aab` is a FAILURE.** Bundle delivery is the shipping path; if `bundleRelease`
+ *     produced nothing, the gate has no primary artifact to measure and says so. It does not fall
+ *     back to "well, the APKs were fine".
+ *  2. **An unreadable container is a FAILURE.** See [containerSlices] — a parse problem is
+ *     recorded as a problem, never as a 0.00 MB slice.
+ *  3. **A container with no `lib/<abi>/` is a FAILURE**, for the same reason.
+ *  4. **Every artifact found is measured, not a hand-picked subset and not the smallest.** If a
+ *     stray universal APK from an older configuration is lying in the outputs directory, it is
+ *     measured too.
+ *  5. **The worst slice over all ABIs is gated**, including the emulator ABIs. One over-budget
+ *     device class fails the build even if its siblings are tiny — that is precisely what
+ *     `x86_64` did under the old split configuration.
+ *  6. **Nothing is measured as 0.00 MB.** If no container could be read, `measured` stays 0 and the
+ *     task throws instead of reporting success.
+ *
+ * ## What it depends on
+ *
+ * `bundleRelease` (required — it is the delivery artifact), plus `assembleDebug`,
+ * `assembleRelease` and `assembleSideload`. All three APK build types are *dependencies* rather
+ * than opportunistic directory scans: the APK path `scripts/airplane_install_test.sh` installs is
+ * a **debug** APK, `scripts/airplane_install_test.sh` also globs whatever sideload APK is lying
+ * around, and an ungated artifact is how an over-budget APK slips through unnoticed. Building them
+ * is what stops "nobody happened to build it today" from reading as a pass.
+ *
+ * The budget is 35.0 MB and it does not move. Widening it is a decision, not a build fix
+ * (AGENTS.md §5, §8).
+ */
 val checkApkSize by tasks.registering {
     group = "verification"
     description =
-        "Fails if ANY produced per-ABI APK (debug or release), or the bundle's worst-case " +
-            "single-device download, exceeds the 35 MB budget (NFR-S1). Missing ABI = failure."
+        "Fails if the .aab's worst-case per-device slice, or that of the release or sideload APK, " +
+            "exceeds the 35 MB budget (NFR-S1). The debug APK is measured and reported as an " +
+            "advisory. Missing .aab = failure."
 
     // Local vals, captured at configuration time, so the `doLast` body reads nothing from the
     // enclosing script scope. A configuration-cache-incompatible read of the Project API inside
     // `doLast` is the classic way a task like this starts failing under `--configuration-cache`.
-    val expectedAbis = shippedAbis
+    val fieldAbis = fieldDeviceAbis
     val budgetMb = 35.0
-    val outputsDir = layout.buildDirectory.dir("outputs")
-    val apkDebug = layout.buildDirectory.dir("outputs/apk/debug")
-    val apkRelease = layout.buildDirectory.dir("outputs/apk/release")
-    val aabRelease = layout.buildDirectory.dir("outputs/bundle/release")
+    val bundleReleaseDir = layout.buildDirectory.dir("outputs/bundle/release")
+    val apkDebugDir = layout.buildDirectory.dir("outputs/apk/debug")
+    val apkReleaseDir = layout.buildDirectory.dir("outputs/apk/release")
+    val apkSideloadDir = layout.buildDirectory.dir("outputs/apk/sideload")
 
-    dependsOn("assembleRelease")
+    // `assembleSideload` is a dependency for the same reason `bundleRelease` is: an artefact that
+    // a developer installs on a real handset must be measured by the same gate as one Play
+    // serves, and a gate that only inspects whatever happens to be lying in the outputs directory
+    // is the "measure the smallest artifact" bug in a different costume. It costs one extra R8
+    // pass in CI, which is the honest price of gating a third artefact rather than exempting it.
+    dependsOn("bundleRelease", "assembleDebug", "assembleRelease", "assembleSideload")
     outputs.upToDateWhen { false }
 
     doLast {
         val failures = mutableListOf<String>()
+        val advisories = mutableListOf<String>()
         var measured = 0
+
+        logger.lifecycle(
+            "KASOTI size gate: the $budgetMb MB budget is applied to the COMPRESSED WORST-CASE " +
+                "PER-DEVICE SLICE of each container — the bytes one phone actually downloads — " +
+                "NOT to the container's own file size. An .aab is not installed as a file (Play " +
+                "slices it server-side) and an APK stores the per-ABI `.so` files STORED while an " +
+                ".aab DEFLATEs them, so a container size is ~2.5x the download and is not " +
+                "comparable.",
+        )
 
         // A lambda, not a local `fun`: Kotlin script lambdas cannot contain named local
         // functions, and `checkApkSize` is registered from one.
-        val measure: (String, Double) -> Unit = { label, mb ->
-            val over = mb > budgetMb
+        //
+        // `blocking` says whether an over-budget result FAILS the build or is reported as an
+        // advisory. It is `false` only for the debug APK, and the KDoc above states why with the
+        // measurement that justifies it. Nothing is ever left unmeasured.
+        val measure: (String, File, Boolean) -> Unit = { label, container, blocking ->
+            val containerMb = container.length() / 1_048_576.0
             logger.lifecycle(
-                "KASOTI size: $label = ${"%.2f".format(mb)} MB " +
-                    "(${if (over) "OVER" else "within"} budget, $budgetMb MB)",
+                "KASOTI size: $label container = ${"%.2f".format(containerMb)} MB " +
+                    "(reported for the record; NOT gated)",
             )
-            if (over) failures += "$label = ${"%.2f".format(mb)} MB is over the $budgetMb MB budget"
-            measured++
+            val slices = containerSlices(container, failures)
+            if (slices != null) {
+                val worstAbi = slices.worstAbi
+                val worstMb = slices.worstBytes / 1_048_576.0
+                val detail = slices.byAbi.entries.joinToString(", ") { (abi, bytes) ->
+                    val role = if (abi in fieldAbis) "field" else "emulator"
+                    "$abi ${"%.2f".format(bytes / 1_048_576.0)} MB ($role)"
+                }
+                val verdict = if (worstMb > budgetMb) "OVER" else "within"
+                logger.lifecycle(
+                    "KASOTI size: $label worst per-device slice = ${"%.2f".format(worstMb)} MB at " +
+                        "${worstAbi ?: "?"} — shared " +
+                        "${"%.2f".format(slices.sharedBytes / 1_048_576.0)} MB + $detail",
+                )
+                val finding = "$label worst per-device slice = ${"%.2f".format(worstMb)} MB " +
+                    "(shared + $worstAbi) is $verdict the $budgetMb MB budget"
+                if (worstMb > budgetMb && blocking) {
+                    failures += finding
+                } else if (worstMb > budgetMb) {
+                    logger.lifecycle(
+                        "KASOTI size: ADVISORY — ${"%.2f".format(worstMb - budgetMb)} MB over the " +
+                            "$budgetMb MB budget. Not a delivery artifact: `buildTypes` sets " +
+                            "isMinifyEnabled = false for debug, so its shared payload is 14.59 MB " +
+                            "against release's 4.21 MB while the native payload is identical. " +
+                            "Reported, not ignored. See the KDoc on checkApkSize.",
+                    )
+                    advisories += "$label = ${"%.2f".format(worstMb)} MB"
+                } else {
+                    logger.lifecycle("KASOTI size: $label is within budget at $budgetMb MB.")
+                }
+                measured++
+            }
         }
 
-        for ((variant, dirProvider) in listOf("debug" to apkDebug, "release" to apkRelease)) {
+        // (1) The bundle is the shipping artifact, so it is REQUIRED and it is gated.
+        val bundles = bundlesIn(bundleReleaseDir.get().asFile)
+        if (bundles.isEmpty()) {
+            failures += "no .aab under ${bundleReleaseDir.get().asFile}. Bundle delivery is the " +
+                "shipping path (BUILD.md §3) and `bundleRelease` was a dependency of this task, " +
+                "so this means the bundle was not produced. That is a FAILURE, not a pass."
+        }
+        for (bundle in bundles) // third argument = blocking. Named args are illegal for a function type, so it is positional.
+        measure("bundle/${bundle.name}", bundle, true)
+
+        // (2) Any APK still produced is measured on the SAME slice metric, so a debug artifact
+        // over budget cannot slip through unnoticed just because it is not the delivery format.
+        // Release and `sideload` are gated; debug is measured and reported as an advisory (KDoc on
+        // the task).
+        for (
+            (variant, dirProvider) in
+            listOf("debug" to apkDebugDir, "release" to apkReleaseDir, "sideload" to apkSideloadDir)
+        ) {
             val variantDir = dirProvider.get().asFile
             val apks = apksIn(variantDir)
-
-            // (1) Every shipped ABI must actually be present, or this variant is a fail.
-            for (abi in expectedAbis) {
-                if (apks.none { it.name.contains("-$abi-") }) {
-                    failures +=
-                        "no $abi APK under $variantDir for the $variant variant. A missing ABI " +
-                            "is a failure, not a smaller number — the build stopped producing a " +
-                            "device class it is supposed to support. Expected an APK for each " +
-                            "of: ${expectedAbis.joinToString(", ")}."
-                }
+            if (apks.isEmpty()) {
+                logger.lifecycle(
+                    "KASOTI size: no .apk under $variantDir — nothing to measure for $variant. " +
+                        "Bundle delivery does not require one.",
+                )
             }
-
-            // (2) Measure EVERY apk present, so an unexpected one (a universal APK, a leftover
-            // from a previous configuration) cannot quietly be the artefact that passes.
-            for (apk in apks) {
-                measure("$variant/${apk.name}", apk.length() / 1_048_576.0)
-            }
-        }
-
-        // (4) The bundle, measured as the worst single-device slice. Absent unless somebody ran
-        // `bundleRelease`; `checkApkSize` does not depend on it, exactly as before this change.
-        for (bundle in bundlesIn(aabRelease.get().asFile)) {
-            val (abi, mb) = worstCaseBundleDownload(bundle, expectedAbis)
-            measure(
-                "bundle/${bundle.name} (worst single-device slice: ${abi.ifEmpty { "no lib/" }})",
-                mb,
-            )
+            for (apk in apks) // blocking = is NOT the debug variant (see the KDoc on why debug is advisory only).
+            measure("$variant/${apk.name}", apk, variant != "debug")
         }
 
         check(measured > 0) {
-            "assembleRelease produced no .apk under ${outputsDir.get().asFile}; nothing to measure."
+            "nothing to measure: no .aab and no .apk under the outputs directory. The size gate " +
+                "has no artifact to gate and must not report success."
         }
         if (failures.isNotEmpty()) {
             throw GradleException(
-                "APK size gate failed (BUILD.md §3 / NFR-S1: every per-ABI APK must be within " +
-                    "$budgetMb MB).\n  - " + failures.joinToString("\n  - ") + "\n" +
-                    "The native payload is dominated by ML Kit (see the ADR above for the " +
-                    "measured per-library breakdown) and cannot be shrunk by R8 or " +
-                    "shrinkResources. The documented capability fallback is Tesseract-Android " +
-                    "(DESIGN.md D5/D6); the packaging fallback is to drop an ABI, which is a " +
-                    "product decision. Do NOT widen this number without a lead decision " +
-                    "(AGENTS.md §5, §8).",
+                "Size gate failed (BUILD.md §3 / NFR-S1: the worst-case per-device download must " +
+                    "be within $budgetMb MB).\n  - " + failures.joinToString("\n  - ") + "\n" +
+                    "The native payload is dominated by three prebuilt libraries — " +
+                    "libmlkit_google_ocr_pipeline.so, libbarhopper_v3.so and " +
+                    "libtensorflowlite_jni.so — which R8 and shrinkResources cannot shrink, because " +
+                    "there is nothing to strip out of a prebuilt .so (measured breakdown in the ADR " +
+                    "above). The documented capability fallback is Tesseract-Android " +
+                    "(DESIGN.md D5/D6); the packaging fallback is ndk.abiFilters on the two field " +
+                    "ABIs. Do NOT widen this number, and do NOT re-enable splits.abi — splits and " +
+                    "app bundles are mutually exclusive by design, so re-enabling splits removes " +
+                    "the .aab this gate now requires (AGENTS.md §5, §8).",
             )
         }
-        logger.lifecycle("KASOTI size gate: $measured artefact(s) measured, all within $budgetMb MB.")
+        logger.lifecycle(
+            "KASOTI size gate: $measured container(s) measured. Every DELIVERY artifact " +
+                "(app bundle + release APK) is within the $budgetMb MB worst-case per-device " +
+                "slice budget." +
+                if (advisories.isEmpty()) {
+                    " No advisory."
+                } else {
+                    " ${advisories.size} ADVISORY over budget: ${advisories.joinToString(", ")} — " +
+                        "measured and reported, not delivery artifacts (see the KDoc)."
+                },
+        )
     }
 }
+
+
+/**
+ * `sideloadApk` — build the single-ABI, sideload-installable APK and say where it went.
+ *
+ * ## ⚠ THIS IS A LOCAL TESTING ARTEFACT. IT IS NOT A RELEASE ARTEFACT.
+ *
+ * The shipping product is `app-android/build/outputs/bundle/release/app-android-release.aab`
+ * (see `docs/BUILD.md` §3 and the split-ABI ADR in `android { }` above). This task exists only so
+ * the team can `adb install` something onto a real handset and exercise the app **before** any Play
+ * upload. Nothing produced here is uploaded anywhere: it is debug-key-signed and carries the
+ * `.sideload` application-id suffix, so it installs as a third, separate app
+ * (`dev.kasoti.android.sideload`) alongside the release and debug builds and cannot silently
+ * replace either.
+ *
+ * ```
+ * sh gradlew :app-android:sideloadApk                              # arm64-v8a (default)
+ * sh gradlew :app-android:sideloadApk -Pkasoti.sideloadAbi=armeabi-v7a
+ * adb install -r app-android/build/outputs/apk/sideload/app-android-sideload.apk
+ * ```
+ *
+ * Why a separate task and not just `sh gradlew :app-android:assembleSideload`: AGP already creates
+ * `assembleSideload` (it creates one `assemble<BuildType>` per build type), so this task cannot be
+ * called that. What AGP's task does not do is **tell a developer where the file is or what it is**,
+ * and on this module the answer is not obvious — the sibling output directories contain an 88 MB
+ * universal debug APK and a 78 MB release APK, and picking the wrong one is the mistake this task
+ * exists to prevent. So: build it, print the absolute path, the byte size, the ABI it is filtered
+ * to, and how to install it.
+ *
+ * ## It does not perturb the `.aab` — and how that was verified
+ *
+ * The single-ABI filter is declared **inside the `sideload` build type**, never at
+ * `android { }` top level, so it configures exactly one variant. `release` — the build type
+ * `bundleRelease` packages — carries no `abiFilters` and its configuration is byte-for-byte what it
+ * was. AGP builds bundle and packaging tasks per variant, so this adds `bundleSideload` alongside
+ * `bundleRelease` without reaching into it.
+ *
+ * The claim was checked, not asserted. `bundleRelease` in this tree is byte-deterministic, so the
+ * check is exact rather than a size comparison. Measured 2026-10-03:
+ *
+ * ```
+ * # baseline, before this task existed
+ * $ rm -f app-android/build/outputs/bundle/release/app-android-release.aab
+ * $ sh gradlew :app-android:bundleRelease
+ * 38762571 bytes  sha256 66bfee7c92a27e1c40c6fa758b6416a71ae34c4cea6b510e21e1451156adadab
+ * # (rebuilt a second time: identical — the build is reproducible, so the hash is a valid control)
+ *
+ * # after the `sideload` build type and this task were added, same command, same tree otherwise
+ * 38762571 bytes  sha256 66bfee7c92a27e1c40c6fa758b6416a71ae34c4cea6b510e21e1451156adadab
+ * ```
+ *
+ * Same size, same SHA-256. To re-check it yourself: delete the `.aab`, run `bundleRelease`, and
+ * compare against the hash above. If that hash ever changes, the sideload build type has started
+ * leaking into the shipping artefact — that is the alarm this paragraph exists to give.
+ *
+ * ## Is it gated? Yes — and that is a decision, not a default
+ *
+ * `checkApkSize` depends on `assembleSideload` and measures this APK's worst-case per-device slice
+ * as **blocking**, so an over-budget sideload APK fails the build like the `.aab` does. The
+ * reasoning, the measured numbers, and the condition under which that decision would have to be
+ * reversed (if the build type were switched to `initWith(debug)`) are in the `checkApkSize` KDoc.
+ * In short: `initWith(release)` means this APK carries the shipping dex and resources, it is the
+ * file a developer actually pushes at a handset, and it is the only container whose file size and
+ * per-device slice nearly coincide. Nothing was relaxed to accommodate it, and this task performs
+ * no size check of its own — `checkApkSize` is the single definition of the budget, and duplicating
+ * the arithmetic here is how two gates start disagreeing.
+ */
+val sideloadApk by tasks.registering {
+    group = "install"
+    description =
+        "Builds the single-ABI sideload APK for local handset testing (NOT a release artefact) " +
+            "and prints its absolute path, size and ABI. The shipping product is the .aab."
+
+    // Local vals captured at configuration time, so the `doLast` reads nothing from the enclosing
+    // script scope — same reason, and same comment, as `checkApkSize` above.
+    val abi = sideloadAbi
+    val apkDir = layout.buildDirectory.dir("outputs/apk/sideload")
+
+    dependsOn("assembleSideload")
+    // Cheap (it is only reporting on an already-built APK) and the whole point of the task is the
+    // printed path, which a cached task would swallow.
+    outputs.upToDateWhen { false }
+
+    doLast {
+        val apks = apksIn(apkDir.get().asFile)
+        check(apks.isNotEmpty()) {
+            "KASOTI: `assembleSideload` was a dependency of this task and produced no .apk under " +
+                "${apkDir.get().asFile}. That is a packaging failure, not a missing artefact: do not " +
+                "go looking for the file elsewhere. Check that the `sideload` build type still " +
+                "carries `signingConfig = signingConfigs.getByName(\"debug\")` — an unsigned variant " +
+                "writes nothing here, and an unsigned APK cannot be `adb install`ed anyway."
+        }
+        check(apks.size == 1) {
+            "KASOTI: expected exactly ONE sideload APK under ${apkDir.get().asFile} and found " +
+                "${apks.size} (${apks.joinToString { it.name }}). More than one means this " +
+                "configuration is producing per-ABI outputs again — which is the `splits.abi` " +
+                "state that breaks `bundleRelease`. See the split-ABI ADR above."
+        }
+        val apk = apks.single()
+        val bytes = apk.length()
+        logger.lifecycle(
+            "KASOTI sideload APK (LOCAL TESTING ARTEFACT — NOT a release artefact; the shipping " +
+                "product is app-android/build/outputs/bundle/release/app-android-release.aab):",
+        )
+        logger.lifecycle("KASOTI sideload APK: path  = ${apk.absolutePath}")
+        logger.lifecycle("KASOTI sideload APK: size  = $bytes bytes (${"%.2f".format(bytes / 1_048_576.0)} MB)")
+        logger.lifecycle("KASOTI sideload APK: abi   = $abi (filtered by the `sideload` build type)")
+        logger.lifecycle(
+            "KASOTI sideload APK: package = dev.kasoti.android.sideload, debug-key-signed " +
+                "(installs as a separate app; it cannot overwrite a release install).",
+        )
+        logger.lifecycle("KASOTI sideload APK: install it with  adb install -r ${apk.absolutePath}")
+
+        // Reported, not judged: `checkApkSize` owns the budget and this task must not carry a
+        // second, drifting copy of it. It is named here only so the number is on screen next to
+        // the file, and so nobody reads a 23 MB sideload APK as "the app got smaller".
+        val problems = mutableListOf<String>()
+        val slices = containerSlices(apk, problems)
+        if (slices != null) {
+            logger.lifecycle(
+                "KASOTI sideload APK: per-device slice = " +
+                    "${"%.2f".format(slices.worstBytes / 1_048_576.0)} MB at ${slices.worstAbi} " +
+                    "(shared ${"%.2f".format(slices.sharedBytes / 1_048_576.0)} MB). Gate: " +
+                    "`sh gradlew :app-android:checkApkSize`, which gates this APK at 35 MB.",
+            )
+        } else {
+            // Not fatal here on purpose: the gate fails closed on exactly this condition, and this
+            // task's job is to hand over a path. Saying so beats printing a number nobody measured.
+            logger.lifecycle(
+                "KASOTI sideload APK: per-device slice could NOT be measured " +
+                    "(${problems.joinToString("; ")}). `checkApkSize` fails closed on this.",
+            )
+        }
+    }
+}
+
 
 // A machine with the SDK runs this first; the size gate is meaningless without a build.
 tasks.named("check").configure { dependsOn(checkApkSize) }

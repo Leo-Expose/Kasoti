@@ -109,14 +109,17 @@ sh gradlew :app-desktop:distTar                 # also exists
 # android — REQUIRE an SDK in local.properties or ANDROID_HOME. As of 2026-10-03 an SDK IS
 # present on the dev box, `:app-android` IS in the build, and these all work.
 sh gradlew projects                             # lists all SIX projects incl. :app-android
-sh gradlew :app-android:assembleDebug           # 2 APKs: arm64-v8a 33.39 MB, armeabi-v7a 26.56 MB
-sh gradlew :app-android:assembleRelease         # 2 APKs: arm64-v8a 22.97 MB, armeabi-v7a 16.14 MB
-sh gradlew :app-android:checkApkSize            # the 35 MB gate; 4 artefacts, all within budget
+sh gradlew :app-android:assembleDebug           # 1 universal APK, app-android-debug.apk (87.98 MB)
+sh gradlew :app-android:assembleRelease         # 1 universal APK, app-android-release-unsigned.apk
+                                               #   (77.55 MB) — unsigned until scripts/provision.sh
+sh gradlew :app-android:bundleRelease           # OK -> app-android/build/outputs/bundle/release/
+                                               #   app-android-release.aab (36.97 MB). THE PRODUCT.
+sh gradlew :app-android:sideloadApk             # ONE-ABI sideload APK, arm64-v8a, 23.01 MB.
+                                               #   LOCAL TESTING ONLY — see "Testing on a real
+                                               #   handset" below. Never uploaded anywhere.
+sh gradlew :app-android:sideloadApk -Pkasoti.sideloadAbi=armeabi-v7a   # 16.18 MB instead
+sh gradlew :app-android:checkApkSize            # the 35 MB gate; 4 containers, all within budget
 sh gradlew :app-android:installDebug            # needs a DEVICE; none has ever been attached
-# ⛔ sh gradlew :app-android:bundleRelease      # FAILS on AGP 8.9.2 with ABI splits on:
-#                                               #   :app-android:buildReleasePreBundle
-#                                               #   > Sequence contains more than one matching element.
-#                                               #   => NO .aab, NO Play Store bundle. APK-only.
 # ⛔ sh gradlew :app-android:test               # FAILS: 160 compile errors, all in
 #                                               #   ml/BlazeFaceDesktopParityTest.kt (150) and
 #                                               #   ml/BlazeFaceInputTest.kt (10), which import
@@ -125,8 +128,8 @@ sh gradlew :app-android:installDebug            # needs a DEVICE; none has ever 
 
 # offline proof
 sh app-android/tools/verify-offline.sh          # exit 0 — 201/201, no SDK needed
-sh scripts/airplane_install_test.sh             # exit 1: finds the APKs, then refuses on the 2
-                                                #   unpopulated hashes in bundle_manifest.sample.txt
+sh scripts/airplane_install_test.sh             # exit 1 — see the note below; the reason is NOT
+                                                 #   the bundle hashes any more
 sh scripts/airplane_install_test.sh --skip-bundle  # exit 2 (INCOMPLETE) — reaches step D, no adb
 ```
 
@@ -138,10 +141,50 @@ reports a stale result for four of the five modules. Measured 2026-10-03: `--rer
 ⚠️ **`ktlintCheck` needs `--continue`.** Without it Gradle stops at the first failing task and
 prints 3 130 of 4 267 violations. With `--continue`, all 35 ktlint Check tasks run and 12 fail.
 
-⚠️ **Installing the right APK matters now that there is no universal one.** ABI splits ship
-`arm64-v8a` (any phone from ~2017) and `armeabi-v7a` (low-end 32-bit ARM) only; `x86`/`x86_64`
-are **not** shipped, so there is no emulator build. Installing the wrong ABI gives
-`INSTALL_FAILED_NO_MATCHING_ABIS`, and there is no `app-android-debug.apk` by any name.
+### Testing on a real handset — build the sideload APK, not the universal one
+
+The `.aab` is the shipping product. It is **never installed as a file** — Play slices it per device —
+so it cannot be used for a pre-Play handset run. And the two APKs `assembleDebug`/`assembleRelease`
+emit are *universal*: they carry `arm64-v8a`, `armeabi-v7a`, `x86` **and** `x86_64`, so an 88 MB
+debug APK has to be pushed over USB to test on a handset that will only ever load one of those.
+
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
+sh gradlew :app-android:sideloadApk          # arm64-v8a by default
+sh gradlew :app-android:sideloadApk -Pkasoti.sideloadAbi=armeabi-v7a
+
+# the task prints the absolute path; install it with:
+adb install -r app-android/build/outputs/apk/sideload/app-android-sideload.apk
+adb shell monkey -p dev.kasoti.android.sideload -c android.intent.category.LAUNCHER 1
+```
+
+| | |
+|---|---|
+| **What it is** | a **LOCAL TESTING artefact**. Never uploaded to Play or anywhere else. |
+| **The shipping product** | `app-android/build/outputs/bundle/release/app-android-release.aab` |
+| **Path** | `app-android/build/outputs/apk/sideload/app-android-sideload.apk` |
+| **Size** | 23.01 MB (arm64-v8a) · 16.18 MB (armeabi-v7a) — measured 2026-10-03 |
+| **Package** | `dev.kasoti.android.sideload` — a third app on the handset, beside release and debug |
+| **Signing** | the auto-generated **debug** key, so `adb install` works. It therefore *cannot* overwrite a provisioning-signed release install (that is `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, by design). |
+| **Build type** | `initWith(release)` — R8 and `shrinkResources` are **on**, so this is the closest thing to what Play serves. A pre-Play run should catch an R8-stripped TFLite/ML Kit entry point, which a debuggable APK would hide. |
+| **Gate** | **Yes, blocking.** `checkApkSize` depends on `assembleSideload` and measures this APK's worst-case per-device slice (22.91 MB at arm64-v8a) against the same 35 MB budget. |
+
+How it works, and why it cannot affect the `.aab`: the ABI filter is a `ndk { abiFilters }`
+declared **inside the `sideload` build type**, not at `android { }` top level. The `release` build
+type carries no filter, so `bundleRelease` still packs all four ABIs. Verified by rebuilding the
+bundle from scratch either side of the change — 38 762 571 bytes,
+`sha256 66bfee7c92a27e1c40c6fa758b6416a71ae34c4cea6b510e21e1451156adadab`, identical both times.
+Full reasoning and the rejected alternatives are in the ADRs in `app-android/build.gradle.kts`.
+
+`x86`/`x86_64` are still available — through the universal `app-android-debug.apk`, which is what
+you want on an emulator. The sideload task deliberately refuses them
+(`-Pkasoti.sideloadAbi=x86_64` fails at configure time with a message naming the two valid values):
+a sideload APK is for a handset, and the emulator ABIs are one command away anyway.
+
+⚠️ **Installing the right APK still matters.** Both the universal APKs and the sideload APK exist
+side by side under `app-android/build/outputs/apk/`. `adb install` on the wrong one gives
+`INSTALL_FAILED_NO_MATCHING_ABIS`; `scripts/airplane_install_test.sh` picks a candidate by
+directory and will not pick the sideload one for you unless you pass `--apk`.
 
 **Exit code 4 is not a broken build.** `:eval:run` returns 4 = INCOMPLETE whenever a required
 suite is skipped, and the device gates (`L-GATE-02`, `P-GATE-01`, `F-GATE-01`, `F-GATE-03`,
@@ -158,9 +201,9 @@ launcher executes. Two things remain true and are stated rather than hidden:
 - `bundleOffline` is still **not** a task in this tree. `.github/workflows/ci.yml:645-648`
   probes for it with `./gradlew -q help --task bundleOffline` and prints "`bundleOffline` is not a
   Gradle task in this tree yet." when it is missing, which is the honest form. ⚠️ **do not confuse
-  this with `:app-android:bundleRelease`**, which *is* a real task and is **broken** (AGP 8.9.2 ×
-  ABI splits). Two different facts, previously conflated in this file: a task that does not exist,
-  and a task that fails.
+  this with `:app-android:bundleRelease`**, which *is* a real task and, since `splits.abi` was
+  removed (see `app-android/build.gradle.kts`), now **succeeds**. Two different facts, previously
+  conflated in this file: a task that does not exist, and a task that produces the shipping `.aab`.
 - A distribution used to **lose the macro model** — the lookup used to be repo-relative, so a
   packaged console silently abstained on the print-process layer and could return a different
   verdict from a checkout console on the same document. The model now ships inside the
@@ -288,7 +331,7 @@ obtained**). Full register with sources, digests and provenance states: `THIRD_P
 | `DataType error: cannot resolve DataType of java.util.HashMap` | You used the two-argument `run(Object, Object)`. A multi-output model must use `runForMultipleInputsOutputs(Object[], Map<Integer, Object>)`; the two-arg form picks its output accessor from the *input*'s type |
 | Desktop TFLite reports `available = false` on Windows or Apple Silicon | Expected. No upstream native exists for `windows-x86_64` or `osx-aarch64` and a version bump will not create one. That platform is "review-only, no on-device inference" (R-T) |
 | ML Kit downloads at runtime | using unbundled artifact → switch to bundled model dep. The dep **is** the bundled `com.google.mlkit:text-recognition`, so this should not happen — but the airplane test that would catch it has **never run on a device** (it reaches step D and stops: no `adb`). Treat it as uncaught, not as absent |
-| `:app-android:buildReleasePreBundle` → `Sequence contains more than one matching element` | AGP 8.9.2 cannot apply `splits.abi` and build an app bundle in the same module. Reproduced with `isUniversalApk` both `false` and `true`. **There is no `.aab` and no Play Store bundle; delivery is APK-only.** Do not "fix" it by dropping `splits.abi` — that returns the release artefact to 77.53 MB, over the 35 MB budget. It needs an AGP upgrade, or the Tesseract-Android capability swap |
+| `:app-android:buildReleasePreBundle` → `Sequence contains more than one matching element` | **Historical — this no longer happens.** It was AGP 8.9.2 refusing `splits.abi` + app bundle in the same module (`PerModuleBundleTask.getResourcesFile()` calls `.single()` on the shrunk `.ap_` files, and splits produce one per ABI). `splits.abi` has been removed: there is no such block, `bundleRelease` **succeeds**, and the shipping artefact is `app-android-release.aab` at 36.97 MB / 14.60 MB worst per-device slice. Confirmed present through AGP 8.13.2, so **do not re-enable splits and do not upgrade AGP to chase it**. If you ever see this error again, something has typed `splits { abi { … } }` back into `app-android/build.gradle.kts` — read the split-ABI ADR there. The one-ABI APK the splits used to provide is now the `sideload` build type, which is scoped and does not break bundling |
 | `:app-android:test` → 160 compile errors in `ml/BlazeFace*.kt` | Those two files import `:platform`'s **JVM** classes (`dev.kasoti.platform.*`, `BlazeFaceAnchors`, `RgbImage`, `ImageIoImaging`) from an **Android** test source set, which cannot see them. Pre-existing since `06bd654`. `app-android/tools/verify-offline.sh` compiles and runs exactly these suites on a bare JVM (201/201), so the assertions are covered — by the script, not by Gradle |
 | A `scripts/*.sh` fails with a bare `What went wrong: 27` | `JAVA_HOME` is not set, so Gradle ran on the default JDK 27. `export JAVA_HOME=/usr/lib/jvm/java-17-openjdk` and re-run. Measured 2026-10-03: `sh scripts/pii_scrubber_test.sh` fails this way without it and exits 0 with it |
 | `ktlintCheck` reports far fewer violations than expected | You omitted `--continue`. Gradle stops at the first failing task: 3 130 instead of 4 267 (measured 2026-10-03). Also note a `…/src/`-scoped count misses the 9 violations in `.kts` build scripts |

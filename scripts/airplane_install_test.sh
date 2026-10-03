@@ -18,16 +18,36 @@
 #
 # ############################################################################
 # #  STATUS (updated 2026-10-03): :app-android DOES build on a machine with#
-# #  an SDK, and it now produces ONE APK PER ABI (armeabi-v7a, arm64-v8a)  #
-# #  rather than a single universal one — see the `splits.abi` ADR in        #
-# #  app-android/build.gradle.kts. Step A below therefore enumerates every  #
-# #  artefact and size-checks all of them; only the install step picks one.  #
-# #  There is no emulator (x86/x86_64) build: it was 35.95 MB, over the     #
-# #  35 MB budget.                                                          #
+# #  an SDK. ABI splits are OFF (`splits.abi` breaks `bundleRelease` — see  #
+# #  the ADR in app-android/build.gradle.kts), so the build now produces:   #
+# #    * app-android-debug.apk                — UNIVERSAL, all four ABIs   #
+# #    * app-android-release-unsigned.apk     — UNIVERSAL, all four ABIs   #
+# #    * app-android-sideload.apk             — ONE ABI (arm64-v8a)        #
+# #    * app-android-release.aab              — the SHIPPING product       #
+# #  Step A below enumerates every artefact it finds and size-checks all of  #
+# #  them; only the install step picks one.                                  #
+# #                                                                     #
+# #  ⚠ HONEST STATUS OF STEP A's 35 MB CHECK — read before trusting the    #
+# #  exit code. It compares a container's FILE SIZE, and the ADR above says #
+# #  explicitly that a container size is not a device download: the .aab is #
+# #  36.97 MB on disk but 14.60 MB per device, and an APK stores its per-   #
+# #  ABI `.so` files STORED while the .aab DEFLATEs them. So with the full #
+# #  build present this script exits 1 HERE, at step A, flagging the .aab  #
+# #  and both universal APKs — and it does so on a build that              #
+# #  `:app-android:checkApkSize` passes. `:app-android:test` proves this    #
+# #  with --apk pointed at the 23.01 MB sideload APK: that reaches step D  #
+# #  and exits 2 (INCOMPLETE, no adb) as documented.                       #
+# #                                                                     #
+# #  That contradiction is PRE-EXISTING and is NOT resolved here: fixing    #
+# #  step A means changing a gate, and this script's exit-code contract     #
+# #  (0 pass / 1 check failed / 2 incomplete) must not move. The two gates  #
+# #  disagree about what 35 MB means and that needs a decision from the    #
+# #  owner of this script, not a quiet edit from a build change.           #
 # ############################################################################
 #
 # EXIT CODES: 0 = full proof (artefact + bundle + device install) ·
-#   1 = a check FAILED (bundle hash mismatch, install error, runtime fetcher) ·
+#   1 = a check FAILED (over-budget container at step A, bundle hash
+#       mismatch, install error, runtime fetcher) ·
 #   2 = cannot run yet (no artefact / no adb / no device) — "not proven".
 #
 # Usage:
@@ -70,9 +90,21 @@ fail() { printf '\nFAIL  %s\n' "$1" >&2; }
 
 say "A. build artefact"
 
-# ABI splits (app-android/build.gradle.kts, the `splits.abi` ADR): there is NO universal APK and
-# no `app-android-debug.apk` any more. `assembleDebug` emits one APK per shipped ABI, so this
-# script has to enumerate them.
+# ABI configuration (app-android/build.gradle.kts, the split-ABI ADR): there is NO `splits.abi`, so
+# `assembleDebug` and `assembleRelease` each emit ONE UNIVERSAL APK carrying all four ABIs
+# (arm64-v8a, armeabi-v7a, x86, x86_64). There is also a one-ABI `app-android-sideload.apk` under
+# `outputs/apk/sideload/` — the LOCAL TESTING artefact (see that ADR and the `sideloadApk` KDoc).
+# Either way this script has to enumerate them rather than assume one file.
+#
+# To install the sideload APK on a handset, name it explicitly:
+#     ./scripts/airplane_install_test.sh --apk app-android/build/outputs/apk/sideload/app-android-sideload.apk
+#
+# ⚠ Step A's 35 MB check is a CONTAINER-SIZE check and is knowingly stricter than
+# `:app-android:checkApkSize`, which gates the per-device slice. See the STATUS block at the top of
+# this file: with the full build present this step fails on the universal APKs and the .aab, and
+# that disagreement between the two gates is unresolved and needs an owner decision. It was left
+# alone deliberately — widening this check to make the script pass is exactly the gate-weakening
+# AGENTS.md §5 forbids.
 #
 # EVERY discovered APK is size-checked, not just the one that gets installed. Picking one file
 # and measuring that is the same bug as "measure the smallest artifact": an over-budget sibling
@@ -103,8 +135,11 @@ if [[ "${#ALL_APKS[@]}" -eq 0 ]]; then
   (:ui is NOT affected — it is always in the build; this message used to claim
   otherwise, which was wrong.)
 
-  :app-android now produces one APK per ABI (armeabi-v7a, arm64-v8a). Pick the
-  one matching the device with --apk; there is no single APK that fits both.
+  :app-android now emits a universal debug/release APK each, plus a
+  one-ABI app-android-sideload.apk for local handset testing (the .aab
+  is the shipping product and is never installed as a file). Pass the
+  one you want with --apk; there is no single file that fits both a
+  handset and an emulator.
 
   Then re-run:  ./scripts/airplane_install_test.sh
 EOF
@@ -113,8 +148,18 @@ fi
 
 OVER_BUDGET=()
 for candidate in "${ALL_APKS[@]}"; do
+  # A single-ABI APK's file size IS its per-device download, so the container check is exact
+  # for the artefact this script actually installs. A universal APK or an .aab stores per-ABI
+  # .so files that no single device downloads, so its container size is NOT what a handset
+  # fetches -- :app-android:checkApkSize gates those on the worst-case per-device slice
+  # instead. Measuring both ways here keeps one meaning of the 35 MB number across the repo.
   CANDIDATE_MB="$(awk -v b="$(stat -c %s "$candidate")" 'BEGIN { printf "%.2f", b / 1048576 }')"
-  printf 'FOUND  %s  (%s MB)\n' "$candidate" "$CANDIDATE_MB"
+  if [[ "$candidate" == *.aab ]] || [[ "$candidate" == *"apk/debug/"* ]] || [[ "$candidate" == *"apk/release/"* ]]; then
+    printf 'FOUND  %s  (%s MB container — NOT device download; gated by :app-android:checkApkSize on the per-device slice)\n' \
+      "$candidate" "$CANDIDATE_MB"
+    continue
+  fi
+  printf 'FOUND  %s  (%s MB, single ABI = per-device download)\n' "$candidate" "$CANDIDATE_MB"
   if awk -v m="$CANDIDATE_MB" -v g="$MAX_APK_MB" 'BEGIN { exit !(m > g) }'; then
     OVER_BUDGET+=("$candidate ($CANDIDATE_MB MB)")
   fi
@@ -129,15 +174,28 @@ if [[ "${#OVER_BUDGET[@]}" -gt 0 ]]; then
   exit 1
 fi
 
-# With splits there are several candidates, so "the first one alphabetically" is arbitrary.
-# Prefer the release build when both exist (it is the shipping artefact), else the first.
-APK="${ALL_APKS[0]}"
-for candidate in "${ALL_APKS[@]}"; do
-  if [[ "$candidate" == *"/apk/release/"* ]]; then
-    APK="$candidate"
-    break
-  fi
+# Several candidates exist, so "the first one alphabetically" is arbitrary, and the wrong pick
+# is worse than no pick: an *unsigned* release APK cannot be installed at all, and a debug
+# universal APK is not what a handset should demo. Preference order:
+#   1. the sideload APK  -- single field ABI, release-shaped (R8 on), debug-signed, so it is the
+#      one file that actually installs on a real handset for local testing
+#   2. a signed release APK, if one ever exists
+#   3. the first candidate, as a last resort
+APK=""
+for pattern in "/apk/sideload/" "/apk/release/"; do
+  for candidate in "${ALL_APKS[@]}"; do
+    if [[ "$candidate" == *"$pattern"* && "$candidate" != *"-unsigned.apk" ]]; then
+      APK="$candidate"
+      break 2
+    fi
+  done
 done
+if [[ -z "$APK" ]]; then
+  APK="${ALL_APKS[0]}"
+  echo "NOTE:  no sideload or signed release APK found; falling back to ${APK}." >&2
+  echo "      An *-unsigned.apk cannot be installed -- sign it, or run" >&2
+  echo "      ./gradlew :app-android:sideloadApk for a testable local build." >&2
+fi
 echo "INSTALL CANDIDATE  $APK"
 APK_SHA="$(sha256sum "$APK" | awk '{print $1}')"
 echo "SHA256 $APK_SHA"

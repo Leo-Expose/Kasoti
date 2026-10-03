@@ -54,7 +54,10 @@
 #          EmbModel.kt                              (ICAO, E.164, int8 quantisation)
 #     S09  line is a complement or a rate bound     `1.0 - x`, `x in 0.0..1.0`
 #     S10  file is Spectrum.kt                      published DSP window + guards
-#     S11  file is NumberFormat.kt                  display format widths
+#     S11  line names NumberFormat. or decimals     display format widths
+#          (LINE-scoped, not file-scoped: MetricSink.kt is a renderer, not a
+#           formatting module, and exempting the whole file would let anything
+#           hide there. Measured — a literal in MetricSink.kt IS flagged.)
 #     S14  Percentiles.kt or Classification.kt      report statistic definitions
 #     S15  file is Gate.kt                          SPEC.md §7 bars, not re-tunable
 #     S16  line names the feature vector            LBP bins, embedding DIM
@@ -90,12 +93,41 @@
 #                             base64 alphabet). Data, not a tunable.
 #   A9  array subscripts      foo[3] is a layout index, not an operating point
 #
-#   HONEST CAVEAT, unchanged and still true: A5 and A6 overlap with values that
-#   COULD be tunables (a brightness ceiling of 128, a cosine gate of 0.11), and
-#   the file-scoped rules in HALF 1 are coarser than per-line matching — a
-#   tunable added to Spectrum.kt, NumberFormat.kt or the mrz package would not be
-#   caught by this script. The reviewer still must. Do not treat "not flagged"
-#   as "not a threshold"; the residue is listed in docs/HANDOFF.md.
+#   HONEST CAVEAT — THE RESIDUAL GAP, AND IT IS NOT SMALL. This script is a BLOCKING CI
+#   gate as of 2026-10-03 (promoted from `continue-on-error: true`; decision, date and
+#   reason in docs/HANDOFF.md §7). Being blocking does NOT mean this script sees every
+#   literal in :core, and the difference is specific and enumerable rather than vague:
+#
+#   · A5 and A6 overlap with values that COULD be tunables — a brightness ceiling of 128,
+#     a cosine gate of 0.11 — and nothing here can tell those apart from a width.
+#   · 7 of the 14 script-enforced exemptions in HALF 1 match on PATH, not on the line.
+#     A whole file (or package) is waved through, so any number anywhere inside it is
+#     invisible to this gate:
+#         S01  every file under core/src/commonMain/kotlin/dev/kasoti/mrz/
+#         S02  dev/kasoti/time/CalendarDate, dev/kasoti/diary/IsoInstant
+#         S05  dev/kasoti/json/{Base64Codec,JsonParser,CanonicalJson,JsonValue},
+#              dev/kasoti/diary/Ulid, dev/kasoti/crypto/Primitives,
+#              dev/kasoti/factory/ModelJson, dev/kasoti/evalmetrics/MetricJson
+#         S08  dev/kasoti/checks/Verhoeff, dev/kasoti/log/RedactionPolicy,
+#              dev/kasoti/diary/EmbModel
+#         S10  dev/kasoti/factory/Spectrum
+#         S14  dev/kasoti/evalmetrics/{Percentiles,Classification}
+#         S15  dev/kasoti/evalmetrics/Gate
+#     That is 7 exemptions over 17 file paths. (⚠️ an earlier revision of this header,
+#     and of docs/HANDOFF.md §7, said "6 of 17" and named NumberFormat.kt. Both were
+#     wrong: it is 7, and S11 is matched on the `NumberFormat.`/`decimals` token on the
+#     line, not on the file — which is why MetricSink.kt, a renderer, is deliberately
+#     NOT exempt and a literal in it is still flagged.)
+#     MEASURED, not assumed: injecting a bare `0.42` comparison into each of those 17
+#     paths in turn produces exit 0 every time, while the same literal in an unexempted
+#     path such as dev/kasoti/probe/ produces exit 1.
+#
+#   CONSEQUENCE, stated plainly: a tunable added inside one of those 17 paths will NOT
+#   fail this gate. detekt would catch it — and detekt is `continue-on-error: true`,
+#   still red at ~1.2k issues, and has no notion of a structural exemption, so it is not
+#   a net either. There is therefore NO automated net for a magic number in those files.
+#   A reviewer must still read a diff that touches them (AGENTS.md §4, §8).
+#   Do not treat "not flagged" as "not a threshold".
 #
 #   NOTE: A6 exists because :core implements published specifications (ICAO
 #   9303 MRZ, Verhoeff, base64/byte packing, ISO 18004). Numbers fixed by a

@@ -109,24 +109,42 @@ gradlew's:** gradlew runs it in a child JVM, prints the child's code on stderr
 `./gradlew :eval:run …; echo $?` prints 1, never 4. Anything reading these codes has to parse
 that stderr line — `.github/workflows/ci.yml` does, and treats an unreadable code as a failure.
 
-CI (`.github/workflows/ci.yml`, **669 lines** as of 2026-10-03) runs on every push: build +
+CI (`.github/workflows/ci.yml`, **860 lines** as of 2026-10-03) runs on every push: build +
 all five modules' tests + eval smoke + lint + `:core` network-import ban + PII-scrubber test +
 the SDK-free Android proof + a per-ABI APK size check. **Five facts about it that this file
 must not paper over.**
 
-1. The lint step runs `ktlintCheck` and `detekt` and they are **advisory, not blocking** — both
-   are red on day one (TODO above). The magic-threshold step (`scripts/check_no_magic_thresholds.sh`)
-   is advisory too, but **for a different reason now that it passes**: measured 2026-10-03 it
-   exits 0 on this tree (69 files scanned, 0 findings), so it is no longer red work — it is a
-   decision the owner still has to make. **It is a candidate to become blocking** (the PII
-   scrubber is the precedent for a non-lint hard gate, and the script now self-tests, fails
-   closed on a broken scanner, and cross-checks its allowlist against
-   `fusion/thresholds.v1.json` in both directions so it cannot be widened alone). Leaving it
-   advisory is the conservative choice and is recorded in `docs/HANDOFF.md` §7. The
-   **PII-scrubber step is the exception and is now a hard gate**: it carries no
-   `continue-on-error`, and it fails the build if the scrubber is absent, broken, or silently
-   running zero tests. (Measured 2026-10-03: `sh scripts/pii_scrubber_test.sh` exits 0 — 7
-   scrubber suites green, 111 tests.)
+1. There are now **three** different dispositions among the gates, and conflating them is how a
+   real regression gets filed under "known red":
+   · **`ktlintCheck` and `detekt` are ADVISORY, still red, and must not be touched** (TODO
+     above). They carry `continue-on-error: true` because both default rulesets are red on day
+     one — thousands of ktlint formatting findings and ~1.2k detekt issues. That is a backlog,
+     not a decision.
+   · **The magic-threshold step (`scripts/check_no_magic_thresholds.sh`) is a HARD GATE as of
+     2026-10-03** — `continue-on-error: true` removed, a finding fails the build (decision,
+     date and reason in `docs/HANDOFF.md` §7). It was green when it was promoted (measured
+     2026-10-03: `sh scripts/check_no_magic_thresholds.sh` → exit 0, 69 files scanned,
+     0 findings), so the flag was no longer absorbing a red backlog — it was deferring a
+     decision about a gate that was ready: the script self-tests, fails closed on a broken
+     scanner or an unreadable file, and cross-checks its allowlist against
+     `fusion/thresholds.v1.json` in **both** directions so neither file can be widened alone.
+     A second CI step proves on every run that it can fail: it injects a literal into a
+     sandbox copy of the tree and requires a non-zero exit (`magic-thresholds-negtest`).
+     ⚠️ **Blocking is not the same as complete, and this gate does NOT close the
+     magic-number problem.** 7 of the 14 script-enforced exemptions match on *path* rather
+     than on the line — 17 file paths under `mrz/`, `time/CalendarDate.kt`,
+     `diary/IsoInstant.kt`, `json/*`, `diary/Ulid.kt`, `crypto/Primitives.kt`,
+     `factory/ModelJson.kt`, `evalmetrics/MetricJson.kt`, `checks/Verhoeff.kt`,
+     `log/RedactionPolicy.kt`, `diary/EmbModel.kt`, `factory/Spectrum.kt`,
+     `evalmetrics/{Percentiles,Classification}.kt`, `evalmetrics/Gate.kt` — where an injected
+     literal produces exit 0. detekt would catch those and is **advisory**, so there is **no
+     automated net** for a magic number in those files: a reviewer still must. The list and
+     the measurement are in the script's own header; do not read green here as "no magic
+     numbers".
+   · **The PII-scrubber step is also a hard gate**: it carries no `continue-on-error`, and it
+     fails the build if the scrubber is absent, broken, or silently running zero tests.
+     (Measured 2026-10-03: `sh scripts/pii_scrubber_test.sh` exits 0 — 7 scrubber suites
+     green, 111 tests.)
 2. The eval-smoke step honours the harness's own exit codes, so **exit 4 does not fail the
    build** (2 and 3 still do).
 3. `:app-android` is skipped entirely without an SDK, which the job summary reports as SKIPPED
