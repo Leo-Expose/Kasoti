@@ -235,22 +235,82 @@ jobs:
         run: ./scripts/check_no_network_in_core.sh
 
       # -- 4 ----------------------------------------------------------------
-      # KNOWN-FAILING / ADVISORY, deliberately.
-      # The PII scrubber does not exist in :core yet. The script therefore exits
-      # 1 with an explicit "not implemented yet" message, which is the correct
-      # signal — but making it blocking today would train everyone to ignore a
-      # red CI. continue-on-error keeps the failure VISIBLE in the log while the
-      # scrubber lands. Flip this to blocking in the same PR that adds
-      # core/.../log/PiiScrubber.kt + its adversarial tests.
-      - name: 'GATE (advisory): PII scrubber test — scrubber not implemented yet'
-        continue-on-error: true
-        run: ./scripts/pii_scrubber_test.sh
+      # HARD GATE, and the change from the version that was here before is the whole point of
+      # this block.
+      #
+      # It used to be `continue-on-error: true` with a comment saying "the PII scrubber does
+      # not exist in :core yet". That was honest about the state and wrong about the response:
+      # an always-red advisory is indistinguishable from a real regression, so it trains
+      # everyone to scroll past it — and the *first* thing that goes when people scroll past a
+      # gate is the failure it was there to catch. AGENTS.md §1 named this step as a gate, and
+      # §4's "no PII in logs" checklist item was aspirational rather than checkable while the
+      # scrubber lived only in `:app-desktop`. It lives in `:core` now, with 110 tests of its
+      # own, so there is a real thing to be blocking about.
+      #
+      # NO `continue-on-error` HERE. That is the assertion this step now makes: it can fail the
+      # build. The demonstration that it can is in docs/STATUS.md — deleting
+      # `core/src/commonMain/.../log/PiiScrubber.kt` makes this step exit 1 with "PII scrubber
+      # NOT IMPLEMENTED in :core", and breaking one adversarial test makes the Gradle run exit
+      # non-zero. Both were run, not reasoned about.
+      #
+      # WHAT IT PROVES: the four `:core` scrubber suites ran, each executed at least one test,
+      # and each is green — plus the bilingual-string sweep, because a redaction rule with no
+      # Hindi line is a build failure and not a demo-day surprise.
+      #
+      # WHAT IT DOES NOT PROVE, restated in the summary below: that every call site routes
+      # through the scrubber. The scrubber is a last line of defence; `PiiScrubber`'s own class
+      # comment says why treating it as a first line would make the product worse than having
+      # none at all. The step summary row says PASS, not "no PII in logs".
+      - name: 'GATE: PII scrubber present, suites ran, suites green (AGENTS.md §4)'
+        id: pii-scrubber
+        run: |
+          set -uo pipefail
+          # `set +e` around the capture, and this is not optional. GitHub runs a step body as
+          # `bash --noprofile --norc -e -o pipefail {0}`, so `-e` is ALREADY on before this
+          # script's first line. Under `-e`, a non-zero exit from the command substitution ends
+          # the step on the spot and `code=$?` below is never reached — the step would go red
+          # (which is the right colour, by luck) while printing none of the diagnostics that
+          # say why, and the FAIL row in the summary would never be written. Same trap the
+          # eval-smoke step documents for the harness exit code.
+          set +e
+          output=$(./scripts/pii_scrubber_test.sh 2>&1)
+          code=$?
+          set -e
+          echo "$output"
+          if [ "$code" -ne 0 ]; then
+            echo "::error::pii_scrubber_test.sh exited $code. The PII scrubber is a hard gate: a scrubber that is absent, broken, or silently running zero tests fails the build."
+            {
+              echo "### PII scrubber: FAIL (exit $code)"
+              echo
+              echo "The scrubber suites did not all run and pass. This step is blocking."
+              echo "A regression here is a privacy incident, not a flake — re-run before"
+              echo "assuming otherwise, and do not add an allowlist to get past it (AGENTS.md §8)."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit "$code"
+          fi
+          suites=$(printf '%s\n' "$output" | grep -cE 'test\(s\) green' || true)
+          tests=$(printf '%s\n' "$output" | sed -n 's/^PASS  [0-9]* scrubber suites green — \([0-9][0-9]*\) test.*/\1/p' | head -n 1)
+          echo "::notice title=PII scrubber::PASS — $suites suite(s) reported, $tests test(s) executed, all green."
+          {
+            echo "| PII scrubber (HARD) | PASS — $suites suite(s), $tests test(s) |"
+            echo
+            echo "The row above means: the scrubber exists in \`:core\`, its four suites ran"
+            echo "with a non-zero test count each, and they are green. It does **not** mean"
+            echo "\`no PII in logs\` — that is a call-site property no test in this repo can"
+            echo "establish. See \`PiiScrubber\`'s class comment for why."
+          } >> "$GITHUB_STEP_SUMMARY"
+
 
       # -- 5 ----------------------------------------------------------------
-      # Advisory for a different reason: the check is CORRECT and currently FAILS the
-      # tree. The maintainer has to triage each finding — register the threshold, or
-      # justify the structural number — and then pin a reviewed baseline. Do NOT "fix"
-      # this by widening the allowlist (AGENTS.md §8).
+      # The check is CORRECT and now PASSES on the current tree (measured 2026-10-03:
+      # 69 files scanned, 0 findings). It is still advisory, and that is now a decision
+      # rather than a backlog: the maintainer has to choose whether to make it blocking.
+      # It is a candidate — it self-tests, fails closed on a broken scanner, and
+      # cross-checks its allowlist against fusion/thresholds.v1.json in BOTH directions
+      # so neither file can be widened alone. See AGENTS.md §1 item 1 and HANDOFF.md §7.
+      # Do NOT "fix" a future finding by widening the allowlist (AGENTS.md §8): either the
+      # number is a tunable and belongs in the registry, or it is not and the registry's
+      # `structural` section is where the reason goes.
       #
       # The count is read out of the script's own output rather than written here. The
       # previous version of this step hard-coded "~94 lines", which was wrong on two
@@ -350,9 +410,14 @@ jobs:
               (`function-signature`, `multiline-expression-wrapping`, `argument-list-wrapping`
               account for most of it). `./gradlew ktlintFormat` rewrites them all in one
               pass, which is a whole-tree reformat and needs its own PR.
-            · detekt: ~3/4 of the findings are MagicNumber, i.e. the numbers AGENTS.md §2
-              wants in thresholds.v1.json — a file that does not exist yet. They overlap
-              with scripts/check_no_magic_thresholds.sh but do not agree with it.
+            · detekt: ~71% of the findings are MagicNumber, i.e. the numbers AGENTS.md §2
+              wants in fusion/thresholds.v1.json. That file now EXISTS (49 thresholds, plus a
+              `structural` section for the numbers that are provably not tunables), and
+              scripts/check_no_magic_thresholds.sh — which reads that file and passes — is
+              green. detekt is not, and will not become green from this alone: it has no notion
+              of a structural exemption, so the literals the registry vouches for are still
+              red there. The two tools overlap and do not agree on a total for the same code
+              (detekt counts literals; the script counts lines).
             Both are tracked in AGENTS.md §1. Until they are cleared, treat these counts
             as a direction of travel, not as a pass.
           EOF
@@ -403,29 +468,65 @@ jobs:
       # APK / bundle size gate (BUILD.md §3: APK <= 35 MB).
       # Only meaningful when an SDK exists; otherwise this step is skipped and
       # the job summary says so. Skipping is NOT passing.
-      - name: 'GATE: Android bundle built + size check (<= 35 MB)'
+      #
+      # CHANGED 2026-10-03: this step used to run `:app-android:bundleRelease` and then
+      # re-implement the size arithmetic in shell over `outputs/**/*.aab`. That was wrong
+      # twice over, and one of the two reasons is new:
+      #
+      #  1. It duplicated the arithmetic that `app-android/build.gradle.kts`'s
+      #     `checkApkSize` already owns, and it measured ONE artefact — whichever file the
+      #     `**` glob happened to leave in `$OUT` last. That is the "measure the smallest
+      #     artefact" bug the gate's own KDoc calls out.
+      #  2. `:app-android:bundleRelease` NO LONGER RUNS. AGP 8.9.2 cannot do ABI splits and
+      #     app bundles in the same module: with `splits.abi.isEnable = true` the bundle task
+      #     dies with
+      #         Execution failed for task ':app-android:buildReleasePreBundle'.
+      #         > Sequence contains more than one matching element.
+      #           at com.android.build.gradle.internal.tasks.PerModuleBundleTask
+      #              .getResourcesFile(PerModuleBundleTask.kt:565)
+      #     Reproduced with `isUniversalApk = false`, with `isUniversalApk = true`, and with
+      #     AGP's default ABI set — i.e. from `splits.abi` being on at all, not from this
+      #     repo's filter list. `ndk.abiFilters` cannot be used as a workaround; AGP rejects
+      #     it outright ("Conflicting configuration ... cannot be present when splits abi
+      #     filters are set").
+      #
+      # So this step now builds the APKs and delegates the whole decision to the module's
+      # own gate. The budget is unchanged at 35 MB, it is still HARD, and it is now measured
+      # per ABI — every produced APK, debug and release, with a missing ABI being a failure.
+      # See the `splits.abi` ADR in app-android/build.gradle.kts for the measured numbers and
+      # for the alternative (drop splits, keep the .aab, and the gate goes back to red at
+      # 77.53 MB).
+      - name: 'GATE: Android APKs built + per-ABI size check (<= 35 MB each)'
         if: steps.sdk.outputs.enabled == 'true'
         run: |
           set -euo pipefail
-          ./gradlew --stacktrace :app-android:bundleRelease
-          OUT=""
-          for f in app-android/build/outputs/**/*.aab app-android/build/outputs/**/*.apk; do
-            [ -f "$f" ] && OUT="$f"
-          done
-          if [ -z "$OUT" ]; then
-            echo "::error::bundleRelease produced no .aab/.apk in app-android/build/outputs"
+          # checkApkSize dependsOn assembleRelease and prints one line per artefact. Its
+          # failure IS the gate failure, so `set -e` here is the assertion.
+          ./gradlew --stacktrace :app-android:checkApkSize
+          APKS=$(find app-android/build/outputs -name '*.apk' -type f | sort)
+          if [ -z "$APKS" ]; then
+            echo "::error::no .apk produced under app-android/build/outputs"
             exit 1
           fi
-          MB=$(awk -v b="$(stat -c %s "$OUT")" 'BEGIN{printf "%.2f", b/1048576}')
-          echo "artefact : $OUT"
-          echo "size     : ${MB} MB"
-          printf 'bundle_mb=%s\n' "$MB" >> "$GITHUB_OUTPUT"
-          awk -v m="$MB" 'BEGIN{exit !(m>35)}' && {
-            echo "::error::${MB} MB exceeds the 35 MB budget (BUILD.md §3)."
-            exit 1
-          }
-          echo "OK: ${MB} MB is within the 35 MB budget."
-          echo "### Android bundle: ${MB} MB (budget 35 MB)" >> "$GITHUB_STEP_SUMMARY"
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            MB=$(awk -v b="$(stat -c %s "$f")" 'BEGIN{printf "%.2f", b/1048576}')
+            echo "artefact : $f"
+            echo "size     : ${MB} MB"
+            awk -v m="$MB" 'BEGIN{exit !(m>35)}' && {
+              echo "::error::${MB} MB exceeds the 35 MB budget (BUILD.md §3)."
+              exit 1
+            }
+          done <<< "$APKS"
+          echo "OK: every per-ABI APK is within the 35 MB budget."
+          {
+            echo "### Android APKs (per-ABI, 35 MB budget each)"
+            while IFS= read -r f; do
+              [ -n "$f" ] || continue
+              MB=$(awk -v b="$(stat -c %s "$f")" 'BEGIN{printf "%.2f", b/1048576}')
+              echo "- \`$(basename "$f")\` — ${MB} MB"
+            done <<< "$APKS"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 'Bundle manifest integrity (invariant I12 / AT-12)'
         if: steps.sdk.outputs.enabled == 'true'
@@ -453,11 +554,11 @@ jobs:
             echo "| :eval:test | ${{ steps.eval-tests.outcome || 'not run' }} |"
             echo "| :eval:run smoke | ${{ steps.eval_smoke.outputs.eval_status }} (exit ${{ steps.eval_smoke.outputs.eval_exit }}) |"
             echo "| network-ban in :core (HARD) | ${{ steps.network-ban.outcome || 'not run' }} |"
-            echo "| PII scrubber | ADVISORY — see log (not implemented in :core) |"
+            echo "| PII scrubber (HARD) | ${{ steps.pii-scrubber.outcome || 'not run' }} — suites ran and are green; NOT a claim that no call site logs PII |"
             echo "| magic thresholds | ADVISORY — count in the log |"
             echo "| ktlintCheck / detekt | ADVISORY — counts above |"
             echo "| Android SDK-free proof | ${{ steps.sdk_free_android.outcome || 'not run (SDK present)' }} |"
-            echo "| APK size (35 MB budget) | ${{ steps.sdk.outputs.enabled == 'true' && 'run' || 'SKIPPED — no SDK' }} |"
+            echo "| APK size, per-ABI (35 MB budget each) | ${{ steps.sdk.outputs.enabled == 'true' && 'run' || 'SKIPPED — no SDK' }} — runs \`:app-android:checkApkSize\`; no \`.aab\`: AGP 8.9.2 cannot bundle with ABI splits on |"
             echo
             echo "**No CI run has ever happened against this tree**: there is no git remote"
             echo "and no runner (docs/STATUS.md R-J, R-S). Every row above is unproven until"

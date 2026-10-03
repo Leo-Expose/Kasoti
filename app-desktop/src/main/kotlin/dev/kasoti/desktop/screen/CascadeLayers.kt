@@ -241,15 +241,30 @@ internal fun ScreeningCascade.runMacro(
     layers: MutableList<LayerStatus>,
     warnings: MutableList<String>,
 ): MacroEvidence? {
-    val classifier = request.classifier
-    if (classifier == null) {
+    val model = request.macroModel
+    if (model == null) {
+        // No model at all. The layer did not run, and the row has to say that in the state
+        // column rather than in prose after a reading that was never produced.
         layers += LayerStatus(
             "macro",
             LayerStatus.State.UNAVAILABLE,
-            "no SVM provisioned (pass --svm, or --demo for the untrained stub)",
+            "no macro model provisioned — search ${request.modelSearchNote}",
         )
         return null
     }
+    if (!model.discriminative) {
+        // A model that loaded and has no opinion is *not* a layer that ran. It used to be
+        // reported as RAN with `model=OFFSET, margin=0.000`, which is an argmax over a row of
+        // zero weights wearing the shape of a measurement.
+        layers += LayerStatus(
+            "macro",
+            LayerStatus.State.UNAVAILABLE,
+            "${model.standing} (${model.provenance}) — no discriminative power, so no process " +
+                "reading; provision ${SvmModelFile.DEFAULT_FILE_NAME} to enable this layer",
+        )
+        return null
+    }
+    val classifier = model.classifier
     val photoRect = request.sidecar.photoZone?.toNormRect()
     val textRect = request.sidecar.textZone?.toNormRect()
     if (photoRect == null && textRect == null) {

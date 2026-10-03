@@ -31,8 +31,10 @@ Protocol per patch: clip v2 seated (shroud flat) → in-app macro mode → sharp
 Layout: `eval/data/macro/<process>/<light>/<clip|noclip>/<sourceid>_<n>.png` + `manifest.csv`.
 
 ⚠️ **Two blockers before the first patch can be captured, in order.** (1) **No clip has been
-built** — `hardware/clip_bom.md` is a costed BOM at ~₹445/clip, and the in-app macro mode lives
-in `:app-android`, which has never been compiled. (2) **No calibration** — without
+built** — `hardware/clip_bom.md` is a costed BOM at ~₹445/clip. (⚠️ **corrected 2026-10-03:** the
+in-app macro mode's "never been compiled" reason is gone — `:app-android` now compiles and ships
+inside four APKs. It has still never been **run**, so the macro mode has no exercised capture
+path, and the clip is still unbuilt.) (2) **No calibration** — without
 `device_calib.json` the harness refuses macro metrics outright (EVAL.md §7), so a patch captured
 without the §5 routine is a patch that cannot be used for a gate.
 
@@ -50,8 +52,9 @@ Each volunteer: 1 "doc-style" still (plain wall, front) + 6 varied (light/angle/
 (1) **No embedder.** `emb_v1.tflite` does not exist — every candidate was rejected on licence
 grounds (`docs/spikes/01-face-model.md` §2.1). Collecting consented crops now would produce
 images that no pipeline can turn into a vector, so the consent burden would be taken on for
-nothing. (2) **No device.** Capture lives in `:app-android`, which has never been compiled.
-Consent-first ordering matters more than usual here: get a licence, then a device, then consent.
+nothing. (2) **No device.** Capture lives in `:app-android`, which **compiles and packages** as of
+2026-10-03 but has **never been run** — no `adb`, no handset. Consent-first ordering matters more
+than usual here: get a licence, then a device, then consent.
 
 ## 5. Calibration card (printable, `hardware/calibration_card.pdf`)
 Contents: 4 gray patches (white/18%/black + skin-tone), 5 mm grid + 1 mm scale, resolution wedges, mini rosette-vs-droplet explainer. Routine (30 s, in-app guided): seat clip on card → capture → app stores `device_calib.json` {wb gains, px/mm, focus-ok}. Required ≤7 d before macro eval (EVAL §7). Bring 2 laminated cards to finals.
@@ -59,8 +62,10 @@ Contents: 4 gray patches (white/18%/black + skin-tone), 5 mm grid + 1 mm scale, 
 ✅ The **PDF exists and compiles** (299,935 B, 2 pages, `pdflatex` + `lmodern`; the `.tex` source
 is committed so it is reproducible). ⚠️ **The routine has never been run** — there is no `device_calib.json`
 for any device, which is why every eval run reports `calib REFUSED` and `MACRO-CAL` is SKIPPED.
-The routine itself is in-app, and `:app-android` has never been compiled, so the card is currently
-a printable artefact with no capture path behind it. `docs/STATUS.md` R-D.
+The routine itself is in-app. ⚠️ **corrected 2026-10-03:** `:app-android` now compiles and packages,
+so the card is no longer "a printable artefact with no code behind it" — but the routine has still
+never been executed, so it is a printable artefact with an **unexercised** capture path behind it.
+A `device_calib.json` requires a device, and there is none. `docs/STATUS.md` R-D.
 
 ## 6. Consent template (short, keep signed copies offline)
 "I consent to KASOTI (SIH prototype) capturing cropped face/macro-texture images of my own documents for offline testing, stored in the team's private repo, used only for evaluation, deleted on my request within 24 h, never published or shared externally. Date/signature." (Minors: guardian signs.)

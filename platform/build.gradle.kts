@@ -15,6 +15,34 @@
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
+    // Same three-part fix `:core` needed: declare AGP here so the `LibraryExtension` type resolves
+    // for the `android {}` block below, but only APPLY it when the SDK gate is open, so a
+    // desktop-only machine and CI never need an Android SDK. `androidTarget()` further down is
+    // gated on the same flag and hard-fails with "Missing Android Gradle Plugin" if AGP is not
+    // applied — the exact failure this closes.
+    alias(libs.plugins.android.library) apply false
+}
+
+if (gradle.extra["kasoti.androidEnabled"] == true) {
+    apply(plugin = "com.android.library")
+}
+
+// Declared at the TOP LEVEL, not inside `kotlin { }`: in there the name `extensions` resolves to
+// `KotlinMultiplatformExtension.extensions` (its own `DefaultConvention`, holding only
+// `[ext, sourceSets]`), not to `Project.extensions`, and configuring "android" there fails with
+// "Extension with name 'android' does not exist".
+//
+// `:platform` has no `androidMain` sources today — it is the JVM-only half of an expect/actual
+// seam — but `androidTarget()` still forces AGP to configure a namespace for the module.
+if (gradle.extra["kasoti.androidEnabled"] == true) {
+    extensions.configure<com.android.build.gradle.LibraryExtension> {
+        namespace = "dev.kasoti.platform"
+        // Raised 34 -> 35 to match `:core` and `:app-android`: they share one AndroidX classpath
+        // and consume each other's Android variants, so all three ceilings have to agree or the
+        // mismatch surfaces as an AAR-metadata error against the wrong module. `minSdk` stays 26.
+        compileSdk = 35
+        defaultConfig { minSdk = 26 }
+    }
 }
 
 /**
@@ -80,6 +108,21 @@ kotlin {
                 //           platforms, but it needs the model in ONNX, not TFLite — which breaks
                 //           D1's "same bytes on both platforms" and needs its own spike. NOT
                 //           taken here. Rejected for now, documented rather than hidden.
+                //
+                // INDEPENDENT OF THE ANDROID RUNTIME. This block is `jvmMain` only, and
+                // `tflite-engine` ships its OWN copy of the `org.tensorflow.lite.*` classes —
+                // including the concrete `Interpreter`, which LiteRT's `litert-api:1.0.1` deleted.
+                // `:app-android` reaches the same relocation stub and therefore also lands on
+                // LiteRT, but on a separate classpath. Two facts follow, both checked rather than
+                // assumed:
+                //   1. `:app-android` dropping `tensorflow-lite-support:0.4.4` (to fix 21 duplicate
+                //      `org.tensorflow.lite.*` classes against `litert-api:1.0.1`) changes NOTHING
+                //      here. This file's coordinates, classpath and behaviour are untouched.
+                //   2. `TfliteBlazeFaceDetector.kt` still binds to `Interpreter` and is correct to
+                //      keep doing so. `dev.kasoti.android.platform.TfliteFace.kt` had to migrate
+                //      that one call to `InterpreterApi` + `InterpreterFactory`; do NOT "port" the
+                //      same rename here — the concrete class it would leave behind exists only in
+                //      the jar below.
                 //
                 // `isTransitive = false`: `tflite-engine` declares a dependency on
                 // `ai.djl:api:0.27.0`, but `jdeps` shows the `org.tensorflow.lite.*` classes we

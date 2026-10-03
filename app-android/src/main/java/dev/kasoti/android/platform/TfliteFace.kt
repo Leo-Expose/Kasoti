@@ -14,7 +14,8 @@ import dev.kasoti.face.Embedding
 import dev.kasoti.face.FaceMath
 import dev.kasoti.fusion.FindingCode
 import org.tensorflow.lite.DataType
-import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.InterpreterApi
+import org.tensorflow.lite.InterpreterFactory
 import org.tensorflow.lite.Tensor
 import java.io.File
 import java.nio.ByteBuffer
@@ -86,7 +87,7 @@ class ModelPinLoader(
         val modelTag: String,
         val sizeBytes: Long,
     ) {
-        private var interpreter: Interpreter? = null
+        private var interpreter: InterpreterApi? = null
 
         /**
          * The interpreter, created once and reused.
@@ -94,8 +95,16 @@ class ModelPinLoader(
          * Created lazily so that a screen which never needs the model (a macro-only demo, a
          * permission card) never pays for it, and so that a refused model never reaches an
          * interpreter at all.
+         *
+         * The return type is `InterpreterApi`, not the concrete `org.tensorflow.lite.Interpreter`.
+         * LiteRT's `litert-api:1.0.1` **deleted** the concrete class and kept only the interface;
+         * it survives in `tensorflow-lite-api:2.13.0`, which is exactly the duplicate-runtime
+         * dependency this module no longer resolves. `Interpreter` extended `InterpreterApi` in
+         * TFLite 2.x, so widening the declared type to the supertype is behaviour-preserving:
+         * every call made below (`runForMultipleInputsOutputs`, `getInputTensor`,
+         * `getOutputTensorCount`, `close`) is declared on the interface.
          */
-        fun interpreter(numThreads: Int = DEFAULT_THREADS): Interpreter =
+        fun interpreter(numThreads: Int = DEFAULT_THREADS): InterpreterApi =
             synchronized(this) {
                 interpreter ?: run {
                     // Explicit setters, not property assignment. `Options` exposes
@@ -107,14 +116,17 @@ class ModelPinLoader(
                     // load-bearing — the thread count is what NFR-P1's budget is sized for, and
                     // DESIGN.md §1's "no delegate that could change outputs" is a statement about
                     // what is *enabled*, which is only true if the flag is actually set.
-                    val options = Interpreter.Options()
+                    val options = InterpreterApi.Options()
                     options.setNumThreads(numThreads)
                     // XNNPACK is the CPU delegate and is the only one enabled by default
                     // (DESIGN.md §1: a GPU delegate "must not change outputs beyond the tolerance
                     // test", and that test does not exist yet, so nothing is enabled that could
                     // break bit-comparability across devices).
                     options.setUseXNNPACK(true)
-                    val created = Interpreter(loadMappedBuffer(), options)
+                    // `InterpreterFactory().create(buffer, options)` is the LiteRT spelling of the
+                    // old `Interpreter(buffer, options)` constructor: the concrete class had a
+                    // public constructor, the factory is how `InterpreterApi` instances are made.
+                    val created = InterpreterFactory().create(loadMappedBuffer(), options)
                     interpreter = created
                     created
                 }
@@ -517,7 +529,7 @@ class TfliteFaceDetector(private val model: ModelPinLoader.VerifiedModel) {
      * index in the decode is wrong and the right answer is to refuse. It runs once rather than per
      * capture because it is a property of the model, not of the frame.
      */
-    private fun shapeCheckedInterpreter(): Interpreter {
+    private fun shapeCheckedInterpreter(): InterpreterApi {
         val interpreter = model.interpreter()
         if (!shapesVerified) {
             synchronized(this) {
@@ -648,7 +660,7 @@ class TfliteFaceDetector(private val model: ModelPinLoader.VerifiedModel) {
          *
          * @throws IllegalArgumentException if any of that is not what the model has.
          */
-        fun verifyShapes(interpreter: Interpreter) {
+        fun verifyShapes(interpreter: InterpreterApi) {
             require(interpreter.getInputTensorCount() == 1) {
                 "expected 1 input tensor, model has ${interpreter.getInputTensorCount()}"
             }

@@ -40,6 +40,25 @@ object ConsolePolicy {
     /** Environment variable holding the supervisor PIN for the one-tap wipe (FR-S3). */
     const val SUPERVISOR_PIN_ENV = "KASOTI_SUPERVISOR_PIN"
 
+    /**
+     * Environment variable naming a macro (print-process) model to use.
+     *
+     * Provisioning knob, not a threshold: it changes *which file* is read, never what the
+     * cascade does with what came back. The same file is found automatically inside an
+     * unpacked installation, so this exists for deployments that keep models on a read-only
+     * share rather than inside the artefact.
+     */
+    const val SVM_MODEL_ENV = "KASOTI_SVM_MODEL"
+
+    /**
+     * Environment variable overriding the console home (audit log, case store, PIN file).
+     *
+     * Defaults to `$HOME/.kasoti-console`. It was previously the *working directory*, which
+     * meant the same `wipe` deleted a different store depending on where it was typed, and an
+     * unpacked distribution shipped with a `.kasoti-console` already in it.
+     */
+    const val CONSOLE_HOME_ENV = "KASOTI_CONSOLE_HOME"
+
     /** Minimum PIN length. A four-digit post PIN on a laptop is not a control. */
     const val MIN_SUPERVISOR_PIN_LENGTH = 6
 
@@ -51,11 +70,6 @@ object ConsolePolicy {
         const val INTEGRITY = 3
         const val FAILURE = 4
     }
-}
-
-/** What the console is allowed to write to a log line, and how it says so. */
-object Redaction {
-    const val MARKER = "[redacted]"
 }
 
 /**

@@ -147,15 +147,33 @@ class FlowControllerTest {
         var s = state(screen = capturing(steps = listOf(CaptureStepId.MACRO)))
         assertNull(s.mapCapturingOrNull()?.awaiting, "no sub-state before the first patch")
 
-        s = FlowController.reduce(s, UiEvent.MacroSharpness(MacroZoneSlot.PHOTO, 0.9f))
+        // 1f, not 0.9f: `MacroCard.awaiting` derives DONE from `fraction >= 1f` ("fully taken"),
+        // because `fraction` is measured against the `Q_BLUR` bar and 0.9f is a taken-but-BLURRY
+        // patch. The boundary cases live in `MacroCardShutterGateTest`.
+        s = FlowController.reduce(s, UiEvent.MacroSharpness(MacroZoneSlot.PHOTO, 1f))
         assertEquals(MacroZoneSlot.TEXT, s.mapCapturingOrNull()?.awaiting)
 
-        s = FlowController.reduce(s, UiEvent.MacroSharpness(MacroZoneSlot.TEXT, 0.9f))
+        s = FlowController.reduce(s, UiEvent.MacroSharpness(MacroZoneSlot.TEXT, 1f))
         val macro = s.mapCapturingMacro()
         assertTrue(macro.photoZoneSharpness > 0f)
         assertTrue(macro.textZoneSharpness > 0f)
         assertTrue(macro.ready, "both FR-C3 patches taken means the step can advance")
         assertEquals(MacroZoneSlot.DONE, macro.awaiting)
+    }
+
+    @Test
+    fun `macro does not report done while either patch is still below the bar`() {
+        // The reducer must not be able to talk `MacroCard` into `DONE` early. `MacroStage.Stage
+        // .canAdvance` is the authoritative field-layer check; this only proves the presentation
+        // predicate stops agreeing with it at a partial patch.
+        var s = state(screen = capturing(steps = listOf(CaptureStepId.MACRO)))
+        s = FlowController.reduce(s, UiEvent.MacroSharpness(MacroZoneSlot.PHOTO, 0.55f))
+        assertFalse(s.mapCapturingMacro().ready)
+        assertEquals(MacroZoneSlot.PHOTO, s.mapCapturingMacro().awaiting)
+
+        s = FlowController.reduce(s, UiEvent.MacroSharpness(MacroZoneSlot.PHOTO, 1f))
+        assertFalse(s.mapCapturingMacro().ready, "the text zone has not been taken yet")
+        assertEquals(MacroZoneSlot.TEXT, s.mapCapturingMacro().awaiting)
     }
 
     @Test

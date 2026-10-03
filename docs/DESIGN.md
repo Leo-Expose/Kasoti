@@ -10,7 +10,7 @@
 └───────────────┬──────────────────────────────────────────┘  └──────────────┬──────────────────────────┘
                 │ :ui — pure-Kotlin presentation state + a FieldView contract   │
 ┌───────────────▼────────────────────────────────────────────────────────────────▼────────────────────────┐
-│ :core (Kotlin Multiplatform common — pure logic, 270 tests green)                                          │
+│ :core (Kotlin Multiplatform common — pure logic, 459 tests green)                                          │
 │ mrz · checks · qr · factory · face-math · diary · sync · fusion · audit · evalmetrics · threshold        │
 └───────────────┬──────────────────────────────────────────────────────────────────────────────────────────┘
                 │ expect/actual :platform  (JVM actuals ONLY — no androidMain)
@@ -20,16 +20,22 @@
 ```
 
 **What is not in the diagram, because it does not exist:**
-- **No `@Composable` anywhere.** DESIGN D7 chose Compose Multiplatform; that shape was **not
+- **No `@Composable` in `:ui`.** DESIGN D7 chose Compose Multiplatform; that shape was **not
   taken** (decision log, `HANDOFF.md` §7). `:ui` is a plain `kotlin-jvm` module of presentation
   state, a reducer and a `FieldView` interface, with no renderer bound. `:app-android` writes its
-  own Compose view; a desktop renderer does not exist. Logic is tested (44 tests); the binding is
-  not. STATUS R-R.
+  own Compose view; a desktop renderer does not exist. Logic is tested (**55 tests**; 44 on
+  2026-09-30). ⚠️ **2026-10-03:** the *Android* binding (`ComposeFieldView.kt`) **has now been
+  compiled** by AGP and the Compose compiler and ships inside the APKs — the remaining gap is the
+  **desktop** renderer, not the Android one. Neither has ever been *displayed*, because no device
+  has run the app. STATUS R-R.
 - **No Android `actual`s in `:platform`.** `platform/src/` is `jvmMain` + `jvmTest` only, and
-  `core/src/` is `commonMain` + `commonTest` only, so the Android target of `:core` has never
-  been compiled. `:app-android` carries its own copies of those seams. STATUS R-P.
+  `core/src/` is `commonMain` + `commonTest` only, so `:app-android` carries its own copies of
+  those seams. ⚠️ **2026-10-03:** `core/build.gradle.kts` and `platform/build.gradle.kts` both grew
+  a real `android { }` block (`compileSdk = 35`, `minSdk = 26`), so the Android *target* of `:core`
+  **is** compiled now and its `commonMain` is inside the shipped APK. What remains true is the
+  duplication: `:platform` still has **no Android implementation**. STATUS R-P.
 
-**OCR decision (final):** Android = ML Kit Text Recognition v2 (on-device, bundled, Latin+Devanagari) — verdict path does NOT need Play Services at runtime (bundled model). Desktop = Tesseract via Tess4J + system install (P0) with **manual MRZ entry fallback** (console-appropriate). RapidOCR = P2. *(Footnote: "ML-Kit-free" struck — ML Kit bundled-model is allowed; ban is on Play-Services-download-at-runtime. ⚠️ The Android OCR path has never been compiled or run.)*
+**OCR decision (final):** Android = ML Kit Text Recognition v2 (on-device, bundled, Latin+Devanagari) — verdict path does NOT need Play Services at runtime (bundled model). Desktop = Tesseract via Tess4J + system install (P0) with **manual MRZ entry fallback** (console-appropriate). RapidOCR = P2. *(Footnote: "ML-Kit-free" struck — ML Kit bundled-model is allowed; ban is on Play-Services-download-at-runtime. ⚠️ **2026-10-03: the Android OCR path now COMPILES — it is inside four APKs — and has still never been RUN.** No OCR call has ever executed; bundled-model offline use under the Google ML Kit Terms remains UNVERIFIED.)*
 
 **Inference decision (final): TFLite everywhere, same bytes, hash-pinned.** Kills ONNX-conversion risk. ⚠️ **Corrected:** the desktop does *not* use a first-party TFLite-JVM runtime — none exists. It uses `ai.djl.tflite`, which **has natives for `linux-x86_64` and `osx-x86_64` only**; `windows-x86_64` and Apple-Silicon Mac are review-only with no on-device inference, and a version bump will not fix it. See BUILD.md §4, spike 01 §4, STATUS R-T/R-U. ORT migration = P2, and it would need the model in ONNX, which breaks "same bytes". GPU/NNAPI delegates: optional, off by default, must not change outputs beyond tolerance test — ⚠️ and "off by default" was **unenforced** until 2026-09-30: the Android binding wrote `apply { useXNNPACK = true }`, which resolves to nothing, because TFLite's `Options` exposes setters and no getters. It now calls `setUseXNNPACK(true)`.
 
@@ -94,23 +100,28 @@ decide(case: Evidence, reg: ThresholdRegistry): Verdict  // GREEN/AMBER/RED/GREY
 append(rec: DecisionRecord): Hash; verifyChain(): Boolean
 ```
 
-**Thresholds:** single `ThresholdRegistry` (versioned file, `fusion/thresholds.v1.json`); platform/UI code must not contain magic numbers (lint check). ⚠️ **Half-true today:** the registry *is* implemented, versioned, floor/ceiling-enforced and tested — as a Kotlin enum in `core/.../threshold/ThresholdRegistry.kt`, with 34 thresholds. The **file** `fusion/thresholds.v1.json` does not exist, and **all 34 defaults are untuned** (values a human typed, not values a split chose). The magic-number check that would enforce the second half is red at 171 lines. STATUS R-O, §4.2.
+**Thresholds:** single `ThresholdRegistry` (versioned file, `fusion/thresholds.v1.json`); platform/UI code must not contain magic numbers (lint check). ✅ **The file now exists** (2026-10-03): `core/src/commonMain/kotlin/dev/kasoti/fusion/thresholds.v1.json`, `schemaVersion` 1, **48** thresholds each with name / unit / default / floor / ceiling / `tuningDataRef` / `owner`; `ThresholdName` was reduced to names only and `ThresholdSpecFileTest` fails if the enum and the file ever diverge. ⚠️ **Three caveats that keep this from being simply "done":** (a) the file is **untracked** (`git status` → `??`), so it is in no commit, no clone and no CI run; (b) **all 48 defaults are untuned** — values a human typed, not values a split chose; (c) the magic-number check is **still red, at 175 lines**, and detekt's `MagicNumber` count went *up* (968 → 1 004) rather than down. The registry was the diagnosis; it is not yet the cure. STATUS R-O, §4.2.
 
 ## 3. Platform expect/actual surface (minimal by design)
 
 | Capability | Android actual | Desktop actual | I/O contract |
 |---|---|---|---|
-| Face detect | BlazeFace-short TFLite. ⚠️ **the binding is compiled only against hand-written API stubs — never against the real SDK — and has never run on a device.** The decode, sigmoid, anchor grid, NMS and input preparation are now pure Kotlin in `dev.kasoti.android.ml`, unit-tested and required to be **bit-identical** to `:platform`'s on the real detector output committed in `eval/fixtures/face/raw_outputs/` | Same BlazeFace TFLite via `ai.djl.tflite`. ✅ works on `linux-x86_64` / `osx-x86_64`; **review-only elsewhere** | RGB in → boxes+landmarks out |
+| Face detect | BlazeFace-short TFLite. ⚠️ **compiles against the real LiteRT AAR since 2026-10-03** (`assembleDebug`/`assembleRelease` succeed), **and has never run on a device.** The decode, sigmoid, anchor grid, NMS and input preparation are pure Kotlin in `dev.kasoti.android.ml`, unit-tested and required to be **bit-identical** to `:platform`'s on the real detector output committed in `eval/fixtures/face/raw_outputs/`. ⚠️ those two suites run via `app-android/tools/verify-offline.sh` (201/201), **not** via `:app-android:test`, which does not compile | Same BlazeFace TFLite via `ai.djl.tflite`. ✅ works on `linux-x86_64` / `osx-x86_64`; **review-only elsewhere** | RGB in → boxes+landmarks out |
 | Face embed | ⚠️ **NO WEIGHTS EXIST** — the `emb_v1.tflite` slot is empty. The code path is a labelled seam that yields `face = null` | same — no weights, no path | aligned face → 128 floats |
-| OCR | ML Kit TR v2 bundled. ⚠️ never compiled | Tess4J + tesseract (MRZ config) / manual fallback. ✅ 137 platform tests green | crop → text + conf |
-| Crypto | JCA (RSA/EC/AES) + Keystore. ⚠️ never compiled | JCA + OS store notes. ✅ | bytes in/out |
+| OCR | ML Kit TR v2 bundled. ⚠️ **compiles** (2026-10-03), **never run** | Tess4J + tesseract (MRZ config) / manual fallback. ✅ 137 platform tests green | crop → text + conf |
+| Crypto | JCA (RSA/EC/AES) + Keystore. ⚠️ **compiles**, **never run** — the keystore path is unverified | JCA + OS store notes. ✅ | bytes in/out |
 | NFC | IsoDep + BAC/PA (P1; stub P0) | Phase-2 stub (documented) | — |
-| Imaging | Bitmap→RGB/gray, resize. ⚠️ never compiled | ImageIO→RGB/gray, resize. ✅ | → ByteArray to :core |
-| TTS | Android TTS (Hin/Eng). ⚠️ never compiled | none (P2) | — |
+| Imaging | Bitmap→RGB/gray, resize. ⚠️ **compiles**, **never run** | ImageIO→RGB/gray, resize. ✅ | → ByteArray to :core |
+| TTS | Android TTS (Hin/Eng). ⚠️ **compiles**, **never run** | none (P2) | — |
 
 ⚠️ **There are no Android `actual`s at all.** `platform/src/` contains only `jvmMain` and
-`jvmTest`; `:app-android` carries its own implementations of these seams. So the Android
-column above is a *design*, and every "never compiled" in it is literal. STATUS R-P, R-C.
+`jvmTest`; `:app-android` carries its own implementations of these seams — so the Android column
+above is still a *design*, duplicated rather than shared. **What changed on 2026-10-03 is only
+that the design now compiles and ships** (`:app-android:assembleDebug`/`assembleRelease` succeed,
+4 APKs, size gate green): every "never compiled" above became "never **run**", which is a
+different and smaller gap — and a different one, because a compile proves the signatures and a
+run proves the behaviour. **Nothing in this column has been exercised on hardware.** STATUS R-P,
+R-C.
 
 ⚠️ **"Shared NMS" was wrong, and being wrong about it is what the face-detector parity work
 turned up.** `:platform`'s detector lives in a KMP `jvmMain` source set that an Android module
@@ -154,11 +165,19 @@ Case bundle (zip): `case.json` (evidence + findings + policy versions) + `crops/
 | `emb_v1.tflite` | MobileFaceNet-class | n/a | — | — | — | ⛔ **DOES NOT EXIST.** 7 candidates evaluated, all rejected on licence grounds; 2 upstream repos are 404. No weights were fabricated. `face = null` → layer UNAVAILABLE → **GREEN 1:1 unreachable**, fail-closed by design |
 | `svm_print_v1.json` (D-MACRO) | to be trained by us (sklearn) | ours | :core | :core | ~50 KB | ⛔ **DOES NOT EXIST** — no D-MACRO media. `eval/data/macro/manifest.csv` has 0 rows |
 | `svm_print_v1_synthetic.json` | `eval/tools/synth_macros.py` | ours | :core | :core | 13,718 B | ⚠️ **SYNTHETIC. Not D-MACRO, never gate-eligible.** macro-F1 0.8469 on its own synthetic report split (run `train-20260929T200155Z-SYNTHETIC-s20260932`) — a property of the generator, **not** a print-process result. Committed deliberately so the demo does not silently abstain to UNKNOWN |
-| ML Kit TR + barcode bundled | Google | ToS offline use — verify; **banned** `com.google.android.gms` variants | bundled | n/a | ~10 MB* | ⚠️ declared in the catalog, **never compiled** |
+| ML Kit TR + barcode bundled | Google | ToS offline use — verify; **banned** `com.google.android.gms` variants | bundled | n/a | ~10 MB* | ⚠️ **compiled since 2026-10-03 and inside the measured APK sizes; never run.** The Google-ToS offline-use question is unchanged and still needs an answer before any public distribution |
 | Tesseract + tessdata | distro | Apache | n/a | system | external | declared; Tess4J engine + tests exist on desktop |
 | `uidai_qr_keys.json` | **no confirmed source** | UNVERIFIED | bundled | bundled | KBs | ⛔ **NOT OBTAINED.** `:core` exercises TEST keys only. Signed-QR cannot be claimed as working against real material. STATUS R-B |
 | HMAC sync secret | generated at provisioning | n/a | keystore | OS-protected file | 32 B | `scripts/provision.sh` works. ⚠️ **the repo is on an exFAT volume that ignores `chmod`**, so a secret written inside the checkout is world-readable; provision to `~/.kasoti/provisioning`. STATUS R-Q |
-*Counts toward APK budget; if over, P1 fallback: Tesseract-Android (Tess4J-android) — undecided, and unmeasurable while there is no APK.
+*Counts toward the APK budget — **and it is now measured, not estimated**: `checkApkSize` reports
+33.39 MB (debug arm64), 26.56 MB (debug armeabi-v7a), 22.97 MB (release arm64) and 16.14 MB
+(release armeabi-v7a) against a **35.0 MB** per-artefact budget, all within it. The
+`armeabi-v7a` release artefact is the one that would notice ML Kit growing first, and it has
+18.86 MB of headroom. The P1 fallback if that closes is Tesseract-Android (Tess4J-android) —
+still undecided, and now *measurable* rather than unmeasurable. The `x86_64` split measured
+35.95 MB and was **dropped** on that basis; `x86` was dropped with it. **There is no `.aab`**, so
+"if over" currently means "drop or replace a dependency, or drop an ABI" — widening the 35 MB
+number is not an available option (AGENTS.md §5, §8).
 
 **M0 model spike (timeboxed 2 days, decision matrix in EVAL.md):** ✅ **CLOSED — see
 `docs/spikes/01-face-model.md`.** Result: detector adopted (11/12 on the EVAL.md §5 scorecard);
@@ -180,11 +199,11 @@ I1 model-hash match on diary import else quarantine · I2 monotonic seq per devi
 |---|---|---|---|
 | I1 | model-hash match on diary import, else quarantine | ✅ yes | `SyncTest` + `DiaryTest` (9 + 5 quarantine assertions) |
 | I2 | monotonic seq per device (replay reject) | ✅ yes | `SyncTest`, 8 replay assertions |
-| I3 | thresholds versioned + logged per decision | ⚠️ **partly** | `ThresholdRegistry` floors/ceilings/version/contentHash are exercised by tests. The *file* `fusion/thresholds.v1.json` does not exist, and the magic-number check is red at 171 lines — so "no magic numbers" is unenforced (STATUS R-O, §4.2) |
-| I4 | no verdict path touches network | ✅ yes, but by **source grep**, not bytecode | `scripts/check_no_network_in_core.sh` — green, 75 files scanned, exit 0. A banned import would be caught; a reflective or generated one would not. "Bytecode test" was the wrong word |
-| I5 | PII scrubber on logs | ❌ **NO** | `scripts/pii_scrubber_test.sh` is **red**: no scrubber in `:core`/`:platform`/`eval/src`. A `LogScrubber` + tests exist in `:app-desktop` only. Until the rules are in `:core` and every field routes through them, "no PII in logs" is an intention (STATUS §4.1) |
-| I6 | audit chain verifies | ❌ **NO** | `AuditChain.kt` is implemented and **has no test in any module** — `rg -l AuditChain` over `core/src/commonTest`, `platform/src/jvmTest` and `eval/src` returns nothing. `:app-desktop`'s `verify` command exercises it end to end, but nothing asserts the chain properties |
-| I7 | demo-mode watermark + fixture-seed isolation | ⚠️ **partly** | The UI watermark is asserted (`ui/src/test/.../FlowControllerTest.kt`, 5 references). **"Demo events never merge to real diary" is untested** — the demo session code lives in `:app-android`, which has never been compiled |
+| I3 | thresholds versioned + logged per decision | ⚠️ **partly** | `ThresholdRegistry` floors/ceilings/version/contentHash are exercised by tests, and the *file* `fusion/thresholds.v1.json` now **exists** with 48 fully-attributed entries (2026-10-03) — but it is **untracked**, and the magic-number check is **still red at 175 lines**, so "no magic numbers" remains unenforced (STATUS R-O, §4.2) |
+| I4 | no verdict path touches network | ✅ yes, but by **source grep**, not bytecode | `scripts/check_no_network_in_core.sh` — green, **78** files scanned, exit 0 (measured 2026-09-30). A banned import would be caught; a reflective or generated one would not. "Bytecode test" was the wrong word |
+| I5 | PII scrubber on logs | ⚠️ **PARTLY — and it moved on 2026-10-03** | ✅ `core/src/commonMain/kotlin/dev/kasoti/log/PiiScrubber.kt` now exists with **7 suites / 111 tests green**, and `scripts/pii_scrubber_test.sh` exits 0 and is a **blocking** CI gate (it was red: no scrubber in `:core`). A `LogScrubber` + tests still exist in `:app-desktop`. **What is not yet true:** the script proves the *rules* work, not that **every** log/cache/crash field routes through them — its own closing line says exactly that. Until the call sites are done, "no PII in logs" is a tested scrubber behind an intent. STATUS §4.1 |
+| I6 | audit chain verifies | ✅ **YES — and this row was wrong before 2026-10-03** | It said "`AuditChain.kt` has no test in any module; `rg -l AuditChain` … returns nothing." **That was a wrong grep**, exactly the failure mode `STATUS.md` §9 warns about. Three test files exist: `core/src/commonTest/kotlin/dev/kasoti/audit/AuditChainTest.kt` (**24 tests**), `AuditChainFixture.kt` and `core/src/jvmTest/kotlin/dev/kasoti/audit/AuditChainSha256Test.kt` (**8 tests**). Re-measured 2026-10-03 from the JUnit XML: 32 tests, 0 failures. `STATUS.md` §2 had already corrected this; `DESIGN.md` had not been updated to match |
+| I7 | demo-mode watermark + fixture-seed isolation | ⚠️ **partly** | The UI watermark is asserted (`ui/src/test/.../FlowControllerTest.kt`, 5 references). **"Demo events never merge to real diary" is still untested** — the demo session code lives in `:app-android`. ⚠️ **2026-10-03: that code now compiles and ships inside the APKs** (it was previously never compiled), so the gap is narrower than it was — but it is still a gap, because compilation is not assertion |
 
 ## 9. Key decisions (ADR-lite)
 | ID | Decision | Rationale | If wrong |
@@ -194,5 +213,5 @@ I1 model-hash match on diary import else quarantine · I2 monotonic seq per devi
 | D3 | HMAC sync (prototype) | 20-line JCA both platforms; PKI later | upgrade path in SYNC.md §7 |
 | D4 | No OpenCV | packaging + NDK sinkhole avoided | revisit only with measured need |
 | D5 | Tess4J desktop OCR + manual fallback | console-appropriate, honest | RapidOCR P2 |
-| D6 | ML Kit Android OCR bundled | best accuracy/effort on-device | Tess-android fallback if size/ToS. ⚠️ never compiled or measured |
-| D7 | ~~CMP shared UI~~ → **NOT TAKEN as written** | D7's premise was team leverage, and there is no team | `:ui` is a plain `kotlin-jvm` presentation-state module with a `FieldView` contract and no `@Composable`; the binding is a separate, later, additive change and has never been compiled. See §1 and STATUS R-R |
+| D6 | ML Kit Android OCR bundled | best accuracy/effort on-device | Tess-android fallback if size/ToS. ⚠️ **compiled and size-measured since 2026-10-03** (it is inside all four APKs, budget 35.0 MB, all within); **accuracy never measured** — no OCR call has ever run |
+| D7 | ~~CMP shared UI~~ → **NOT TAKEN as written** | D7's premise was team leverage, and there is no team | `:ui` is a plain `kotlin-jvm` presentation-state module with a `FieldView` contract and no `@Composable`; the desktop binding is a separate, later, additive change and **still does not exist**. ⚠️ the *Android* binding now compiles (2026-10-03), which does not make D7 taken — it makes one renderer real and the other still missing. See §1 and STATUS R-R |

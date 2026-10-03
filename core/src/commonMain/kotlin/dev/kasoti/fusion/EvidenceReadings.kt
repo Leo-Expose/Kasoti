@@ -31,7 +31,7 @@ internal fun readFace(face: FaceEvidence?, registry: ThresholdRegistry): FaceRea
     if (face == null) return null
     return FaceReading(
         evidence = face,
-        adjusted = fuseMatchScore(face.similarity, face.docQuality, face.liveQuality),
+        adjusted = fuseMatchScore(face.similarity, face.docQuality, face.liveQuality, registry),
         redAt = registry[ThresholdName.T_FACE_RED].toFloat(),
         greenAt = registry[ThresholdName.T_FACE_GREEN].toFloat(),
     )

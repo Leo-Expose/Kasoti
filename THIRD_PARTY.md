@@ -11,8 +11,11 @@ ML Kit and Compose rows were missing and are now present). Re-review before the 
 and before any release build.
 
 > ⚠️ **This register describes a project that has never been released and, on the Android side,
-> never been compiled.** "verified" in the Hash-pin/Provenance columns means *we can name a
-> source and re-fetch it* — it does not mean the component has run. See §5.6.
+> never been _run_.** ⚠️ **Corrected 2026-10-03: this note used to say "never been compiled",
+> which stopped being true on that date** — `:app-android` now builds four APKs. What is still
+> true, and what "verified" in the Hash-pin/Provenance columns does **not** mean: *we can name a
+> source and re-fetch it*. It does not mean the component has **run**, and on Android nothing has.
+> See §5.6.
 
 ---
 
@@ -44,8 +47,10 @@ and before any release build.
 `gradle/libs.versions.toml` now has a row below — including the ML Kit and Compose
 rows that were previously missing, which matters because this file claims to be *the*
 place a component's licence and provenance live. What it does **not** cover: transitive
-dependencies (§5.2), and the fact that `:app-android` has never been compiled, so
-"declared" is not "shipped" for the Android rows.
+dependencies (§5.2), and — ⚠️ **corrected 2026-10-03** — the fact that `:app-android` **now
+compiles and packages** (four APKs, all within the 35 MB budget), so "declared" is now
+"**shipped, never run**" for the Android rows: the bytes are in the artefact and no component in
+them has ever executed.
 
 ---
 
@@ -73,11 +78,14 @@ Everything in this section is exact-version-pinned in
 | `org.jetbrains.kotlinx:kotlinx-serialization-json` | 1.8.0 | Apache-2.0 | https://github.com/Kotlin/kotlinx.serialization | version-pinned | verified |
 | `org.jetbrains.compose` (Compose Multiplatform) | 1.8.0 | Apache-2.0 | https://github.com/JetBrains/compose-multiplatform | version-pinned | verified — **declared, NOT applied**: no module uses the CMP plugin (D7 was not taken; `:ui` is plain `kotlin-jvm`). Carries the "unused catalogue entry" note in §5.4 |
 
-### Compose / Android UI — `:app-android` only, **never compiled**
+### Compose / Android UI — `:app-android` only, **built since 2026-10-03, never run**
 
-⚠️ **Read the state of this whole sub-table before trusting any of it.** `:app-android` has
-never been built — no Android SDK, no device (`docs/STATUS.md` R-C). These coordinates resolve
-and their licences are as stated, but *no artefact has been produced from them and none of
+⚠️ **Read the state of this whole sub-table before trusting any of it.** `:app-android` **is**
+built — four APKs exist and `sh gradlew :app-android:checkApkSize` reports all four within the
+35.0 MB budget (measured 2026-10-03) — but **there is no device and no `adb`, so nothing in those
+artefacts has ever executed** (`docs/STATUS.md` R-C). These coordinates resolve and their licences
+are as stated, and the artefact size they produce is now measured, but *no component below has
+been exercised once, and none of
 their size contributions to the APK budget have been measured.* "verified" below means the
 coordinate and its licence are right, not that the code has ever run.
 
@@ -322,10 +330,14 @@ rather than "done":
    built binary because there is no binary. **No release build is defensible
    until both are resolved**, and the first is a permissions decision, not a
    research task.
-6. **Nothing Android has been compiled.** Every `:app-android` row above
-   (Compose, ML Kit, CameraX) is a correctly-stated coordinate whose licence is
-   as written — but no artefact has been built from them, no APK size has been
-   measured, and ML Kit's ToS has not been exercised in a shipped binary.
+6. **⚠️ Corrected 2026-10-03 — this used to read "Nothing Android has been compiled."** Every
+   `:app-android` row above (Compose, ML Kit, CameraX) is now **built**: four APKs, sizes
+   measured (33.39 / 26.56 / 22.97 / 16.14 MB against a 35.0 MB budget). **The gap moved, it did
+   not close:** ML Kit's bundled-model offline use under the Google Terms is still **UNVERIFIED**,
+   and it is now *more* exposed rather than less, because the licence question was previously
+   blocked on "no binary exists" and now has a binary it simply has not been checked against.
+   Nothing has run — no OCR call, no barcode scan, no camera frame — and **there is no `.aab`**,
+   so the shipped artefact is an APK whose contents no bundle-manifest check covers.
    `docs/STATUS.md` R-C.
 
 ---

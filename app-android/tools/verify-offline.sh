@@ -34,7 +34,7 @@
 #     in the **pure** tier — that is what the banned-import guard below enforces
 #   · TIER 2 is a syntax-and-name-resolution gate, not a build. It proves the Kotlin is valid and
 #     that the names resolve; it does NOT prove our stub signatures match the real SDK or the real
-#     TFLite AAR. Read `app-android/tools/stubs/org/tensorflow/lite/Interpreter.java` before
+#     TFLite AAR. Read `app-android/tools/stubs/org/tensorflow/lite/InterpreterApi.java` before
 #     changing anything there.
 #   · resource XML, the manifest, Gradle configuration, dependency resolution, R8, aapt2, Compose
 #   · that the app runs, or produces the right verdict on a device
@@ -298,7 +298,7 @@ java -cp "$OUT/runner:$OUT/fieldtest:$OUT/mltest:$OUT/uitest:$OUT/field:$OUT/ui:
 # A strictly weaker check than tier 1 and a strictly stronger one than "this file is not compiled".
 # It is here because the alternative was four compile errors sitting in `TfliteFaceDetector`
 # unnoticed, and because a face-detection binding nobody can compile is a face-detection binding
-# nobody can review. See app-android/tools/stubs/org/tensorflow/lite/Interpreter.java for exactly
+# nobody can review. See app-android/tools/stubs/org/tensorflow/lite/InterpreterApi.java for exactly
 # what it does and does not establish.
 # ---------------------------------------------------------------------------------------------
 if [ "${1:-}" = "--tier1" ]; then

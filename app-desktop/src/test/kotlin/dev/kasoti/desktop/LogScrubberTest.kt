@@ -1,5 +1,6 @@
 package dev.kasoti.desktop
 
+import dev.kasoti.log.REDACTION_MARKER
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -9,15 +10,30 @@ import kotlin.test.assertTrue
 /**
  * The PII log scrubber (invariant I5, AGENTS.md §5).
  *
+ * **This file is unchanged since the rules moved to `:core`, and that is the point of it.**
+ * The rules now live in `dev.kasoti.log.PiiScrubber` and [LogScrubber] delegates to them, so
+ * every assertion below is running against the `:core` implementation through the console's
+ * chokepoint. It is the faithful-move proof: 300 lines written against the old rules, green
+ * against the new ones, with no assertion relaxed to get there.
+ *
+ * (The only edit this file has taken since the move is where it reads the marker from —
+ * `Redaction.MARKER` became `REDACTION_MARKER`, because there is now one definition of the
+ * token rather than two. The object it came from is gone.)
+ *
  * The second half of this file is the part that matters. It is full of strings that a
  * real document — or an attacker who has edited one — can produce. A scrubber tested only
  * on `"name=RAMESH"` proves nothing: the failure modes that reach a production log are the
  * ones nobody thought of, and most of them are about *breaking the log* rather than about
  * matching a name.
+ *
+ * The cases this file does **not** cover — confusable keys, Unicode digits, invisible
+ * characters, and above all the things a scrubber must *not* mangle — are in
+ * `:core`'s own suite, in `dev.kasoti.log.PiiScrubberAdversarialTest` and
+ * `PiiScrubberFalsePositiveTest`.
  */
 class LogScrubberTest {
 
-    private val marker = Redaction.MARKER
+    private val marker = REDACTION_MARKER
 
     // ------------------------------------------------------------------ keyed values
 

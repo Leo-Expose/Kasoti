@@ -1,0 +1,19 @@
+case: case_01M3RP6WPKJ9Y0SKJS43566F0Y
+verdict: AMBER
+track: PAPER_ID
+threshold: v1
+fusion: fusion-v1
+demo: true
+findings:
+  A_MISSING_LAYER evidence/layers#face=ABSENT required check face did not produce a usable result (ABSENT); it is not treated as a pass
+  A_MISSING_LAYER evidence/layers#diary=ABSENT required check diary did not produce a usable result (ABSENT); it is not treated as a pass
+  M_OK mrz/checks#all-pass every check digit agreed
+layers:
+  image RAN 640x400 gray, mean 0.825
+  quality RAN brightness 210.278 within [40.000, 225.000]
+  quality.appearance UNAVAILABLE blur/glare/pose need the capture pipeline; a file import cannot attest them
+  math RAN TD3; all check digits pass
+  qr SKIPPED no QR supplied
+  macro SKIPPED no photoZone/textZone in the sidecar
+  face UNAVAILABLE no embedding interpreter bound (M2)
+  diary UNAVAILABLE dev.kasoti.diary not yet in :core (M2)

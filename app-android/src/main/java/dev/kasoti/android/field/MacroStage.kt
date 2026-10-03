@@ -66,7 +66,30 @@ class MacroStage(
     ) {
         val complete: Boolean get() = photoZone != null && textZone != null
 
-        /** The step may advance only when both patches are focused. */
+        /**
+         * The step may advance only when both patches are focused. **This is the authoritative
+         * check for the macro shutter and the only one that gates the field layer.** It is not
+         * derived from `dev.kasoti.ui.MacroCard` and nothing in `:ui` can override it.
+         *
+         * Two independent halves, and both are required:
+         *
+         *  - [complete] — both patches exist. Absent means the layer did not run.
+         *  - `sharpness.passed` on *both* — each patch individually cleared the `Q_BLUR` bar.
+         *    `passed` is `blurVariance >= Q_BLUR`, and `Sharpness.fraction` is
+         *    `(blurVariance / Q_BLUR).coerceIn(0f, 1f)`, so `fraction >= 1f` and `passed` are the
+         *    same predicate over the same bar. That identity is what lets the UI's
+         *    `MacroCard.awaiting` (which reads `fraction >= 1f`) and this field-layer check agree
+         *    about sharpness without either of them importing the other.
+         *
+         * The half this class adds over the UI predicate is focus-as-a-*pair*: a patch can clear
+         * the bar and still disagree with its twin (that disagreement is `R-PROC-02`'s input),
+         * and the pair-level evidence is assembled by [evidence]. Failing closed is the point:
+         * a missing or blurred patch yields `false`, never "assume it was fine".
+         *
+         * Do not weaken this to make a test pass (AGENTS.md §5). If a legitimate flow is being
+         * refused, the fix is a threshold registered in `thresholds.v1.json`, not a removed
+         * conjunct.
+         */
         val canAdvance: Boolean
             get() = complete && photoZone?.sharpness?.passed == true && textZone?.sharpness?.passed == true
 

@@ -7,25 +7,53 @@ card, the trust lane, demo mode, and the wiring to `:core` that makes all of tho
 
 ## 1. Verification status — READ FIRST
 
-**This module was written on a machine with no Android SDK, and it has never been compiled.**
+**✅ This module COMPILES AND PACKAGES as of 2026-10-03. It has still never been RUN.**
 
-Nothing under `src/main/java/dev/kasoti/android/{capture,platform,view}`, no resource file and
-no manifest line has been through `aapt2`, `d8`, `R8` or the Compose compiler. Treat the Android
-surface as a *reviewed draft*, not as working code.
+`sh gradlew :app-android:assembleDebug` and `:assembleRelease` both succeed, so everything under
+`src/main/java/dev/kasoti/android/{capture,platform,view}`, every resource file and every manifest
+line **has** now been through `aapt2`, `d8`, `R8` and the Compose compiler — four APKs exist and
+`sh gradlew :app-android:checkApkSize` reports all four within the 35.0 MB budget.
 
-What **was** verified, on this machine, with the pinned Kotlin 2.1.21 compiler against the real
-`:core` classes:
+**Why it never compiled before, in one line:** `app-android/build.gradle.kts` line 1 began with
+`#`. `#` is a **Groovy** comment marker; in a Kotlin script (`.kts`) the Kotlin script compiler
+parses it as **source**, so the module never configured. Exactly one `#` existed in the file, on
+that line. Nothing about the module's code, resources, manifest or dependencies was wrong.
+
+**What is still true, and what "compiles" does not tell you:**
+
+- **No device, no `adb`, no run.** The app has never been installed or launched. CameraX, ML Kit
+  OCR, TFLite inference, Compose rendering, the Keystore and the on-device wipe are **compiled,
+  not exercised.** Compilation proves signatures; only a run proves behaviour.
+- **`x86`/`x86_64` are not shipped**, so **there is no emulator build** — `arm64-v8a` and
+  `armeabi-v7a` only. There is no universal APK either, so there is no single file that installs
+  everywhere.
+- **There is no `.aab`.** `:app-android:bundleRelease` fails on AGP 8.9.2 once ABI splits are on
+  (`buildReleasePreBundle` → `Sequence contains more than one matching element`), so **delivery is
+  APK-only** and this build cannot produce a Play Store bundle.
+- **`:app-android:test` does not compile** — 160 errors, all in
+  `src/test/java/dev/kasoti/android/ml/BlazeFaceDesktopParityTest.kt` (150) and
+  `…/ml/BlazeFaceInputTest.kt` (10), which import `:platform`'s **JVM** classes that the Android
+  variant cannot see. Pre-existing since commit `06bd654`.
+
+Independently of all that, the SDK-free harness still runs, with the pinned Kotlin 2.1.21 compiler
+against the real `:core` classes:
 
 ```
-$ ./app-android/tools/verify-offline.sh
+$ sh app-android/tools/verify-offline.sh
 ==> compiling :ui (main)
 ==> compiling :app-android field layer + JcaCrypto
 ==> compiling tests
 ==> running tests
-[       154 tests found           ]
-[       154 tests successful      ]
+[       201 tests started         ]
+[       201 tests successful      ]
 [         0 tests failed          ]
 ```
+
+⚠️ That is 201 as of 2026-10-03 (it read 154, then 189, in earlier revisions — the count moves as
+suites are added). ⚠️ Its **tier-2 closing message is now stale**: it says `aapt2`, `d8`, `R8`,
+Compose, dependency resolution "and the real SDK/TFLite signatures are all still unverified",
+which `assembleDebug` has since disproved. The 201/201 result is real; that summary line is not.
+It is not edited by the documentation pass because it lives in a tooling script.
 
 That covers `app-android/.../field/**` (the whole cascade: router, MRZ extraction and the one
 sanctioned OCR repair, date/format/drift maths, the quality gate, the macro stage, the quad
@@ -41,46 +69,61 @@ exactly which files are inside and outside the check.
 ### What a person with the SDK must run
 
 ```bash
-# 0. prerequisites (BUILD.md §1): JDK 17 (Temurin), Android SDK platform 34 + build-tools.
+# 0. prerequisites (BUILD.md §1): JDK 17 (Temurin), Android SDK platform 35 + build-tools 35.0.0.
 export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
 export ANDROID_HOME="$HOME/Android/Sdk"        # or: cp local.properties.example local.properties
 
+# ⚠️ `sh gradlew`, not `./gradlew`, on a fresh clone — git records every tracked file as
+#    mode 100644, so ./gradlew returns `permission denied` (docs/STATUS.md R-Q, R-J).
+
 # 1. the repository must still build without Android (the settings gate, AGENTS.md §1)
-./gradlew :core:jvmTest
-./gradlew :eval:run --args="smoke"
-./gradlew /scripts/check_no_network_in_core.sh 2>/dev/null || ./scripts/check_no_network_in_core.sh
+sh gradlew :core:jvmTest
+sh gradlew :eval:run --args="smoke"
+sh scripts/check_no_network_in_core.sh
 
-# 2. now the Android module
-./gradlew :app-android:assembleDebug          # ← the first real compile of this module
-./gradlew :app-android:testDebugUnitTest      # the 104 field-layer unit tests, under AGP
-./gradlew :app-android:lint
+# 2. the Android module — ALL VERIFIED WORKING 2026-10-03
+sh gradlew projects                              # 6 projects incl. :app-android
+sh gradlew :app-android:assembleDebug            # 2 APKs: 33.39 MB (arm64), 26.56 MB (v7a)
+sh gradlew :app-android:assembleRelease          # 2 APKs: 22.97 MB (arm64), 16.14 MB (v7a)
+sh gradlew :app-android:checkApkSize             # NFR-S1 gate: 4 artefacts, all ≤ 35.0 MB
+sh gradlew :app-android:lint
+# ⛔ sh gradlew :app-android:testDebugUnitTest   # FAILS — 160 compile errors (see §1)
 
-# 3. a device (SPEC §10 A2: one low-end 2 GB Android 10+, one mid)
-./gradlew :app-android:installDebug
-adb logcat -s KASOTI                          # the scrubbed log; see field/FieldLog.kt
+# 3. a device (SPEC §10 A2: one low-end 2 GB Android 10+, one mid) — NEVER DONE
+sh gradlew :app-android:installDebug             # no adb, no device: this has never run
+adb logcat -s KASOTI                             # the scrubbed log; see field/FieldLog.kt
 
 # 4. the gates
-./gradlew :app-android:bundleRelease
-./gradlew :app-android:checkApkSize            # NFR-S1: APK ≤ 35 MB, measured, not estimated
-./gradlew bundleOffline && ./scripts/airplane_install_test.sh   # invariant I4
-./scripts/verify_bundle.sh                     # model hashes (I12)
+sh scripts/airplane_install_test.sh              # exit 1 (bundle-manifest placeholders);
+                                                 # --skip-bundle -> exit 2 at step D (no adb)
+sh scripts/verify_bundle.sh                      # model hashes (I12) — correctly refuses
+# ⛔ sh gradlew :app-android:bundleRelease       # FAILS (AGP 8.9.2 x ABI splits) -> NO .aab
+# ⛔ sh gradlew bundleOffline                    # was never a task in this tree
 ```
 
-Expect the first build of step 2 to need work. The specific things most likely to need it, in
-rough order of likelihood:
+**The build-time unknowns below are now RESOLVED** — each one was a guess from memory and each one
+turned out to compile:
 
-| Likely to need fixing | Where | Why |
+| Was "likely to need fixing" | Outcome, measured 2026-10-03 |
+|---|---|
+| **`:core` had no `android { }` block** (expected `Namespace not specified`) | ✅ **Fixed.** `core/build.gradle.kts` and `platform/build.gradle.kts` both carry a real `android { }` block (`compileSdk = 35`, `minSdk = 26`) |
+| `compileSdk` 34 too low for androidx | ✅ **Fixed.** Raised to **35** — `activity-compose:1.10.1` and `core-ktx:1.15.0` declare `minCompileSdk = 35`. An API migration; `minSdk 26` / `targetSdk 34` unchanged |
+| ML Kit artifact coordinates (`text-recognition:16.0.1`, `barcode-scanning:17.3.0`) | ✅ **Resolve and package.** The *licence* question (bundled-model offline use under the Google ML Kit Terms) is **still UNVERIFIED**, and no OCR call has ever run |
+| Compose BOM `2024.12.01` | ✅ **Resolves and compiles**, including the Material3 lambda-progress overload |
+| CameraX `ResolutionSelector` / `ResolutionStrategy` API | ✅ **Compiles** against CameraX 1.4.1 |
+| `Material3 LinearProgressIndicator(progress = { … })` | ✅ **Compiles** |
+| R8 stripping a TFLite entry point | ⚠️ **Unverifiable without a device.** `proguard-rules.pro` is written defensively; a face model could still stop working in release only, and only a run would show it |
+| `MainActivity`'s composable wiring | ✅ **Compiles.** Whether `CameraSurface` is *called* from `KasotiScreen` at runtime is still unexercised |
+
+Still open, and not fixable by compiling:
+
+| Open | Where | Why |
 |---|---|---|
-| **`:core` has no `android { }` block** | `core/build.gradle.kts` (NOT this module's file) | `:core`'s `androidTarget()` is enabled by the same gate, but AGP 8 requires `namespace` + `compileSdk`. Expect `Namespace not specified`. Fix: add `android { namespace = "dev.kasoti.core"; compileSdk = 34 }`. **This is a blocker and it is the `:core` owner's change to make.** |
-| ML Kit artifact coordinates | `gradle/libs.versions.toml` | `com.google.mlkit:text-recognition:16.0.1` and `barcode-scanning:17.3.0` were chosen from memory. They are *bundled* artifacts (the ban is on `com.google.android.gms:play-services-mlkit-*`, which would download a model at runtime — BUILD.md §4), but the **version numbers are unverified**. |
-| Compose BOM version | `gradle/libs.versions.toml` | `2024.12.01` was chosen to match the Compose level `androidx.activity:activity-compose:1.10.1` targets. Unverified. |
-| CameraX resolution-selector API | `capture/CameraController.kt` | `ResolutionSelector` / `ResolutionStrategy` replaced `setTargetResolution` in 1.3. The types and builder names are from memory. |
-| Material3 `LinearProgressIndicator(progress = { … })` | `view/ComposeFieldView.kt` | The lambda overload arrived in Material3 1.3. If the BOM resolves lower, use the `Float` overload. |
-| `MacroStage` classifier binding | `capture/CameraController.kt` | The SVM weights loader is **not implemented**: `MacroStage` is constructed with `classifier = null`, so every patch classifies `UNKNOWN` and the macro layer abstains. See §6. |
-| R8 stripping a TFLite entry point | `proguard-rules.pro` | Written defensively; if a face model silently stops working in release only, this is why. |
-| `MainActivity`'s composable wiring | `MainActivity.kt` | `CameraSurface` is implemented but **not yet called** from `KasotiScreen`; the preview is bound through `attachPreview`. Wiring that up properly needs a state hoist this file does not have. |
+| **`MacroStage` classifier binding** | `capture/CameraController.kt` | The SVM weights loader is **not implemented**: `MacroStage` is constructed with `classifier = null`, so every patch classifies `UNKNOWN` and the macro layer abstains. Compiles; wrong at runtime by construction. See §6 |
+| **`:app-android:test` does not compile** | `ml/BlazeFaceDesktopParityTest.kt`, `ml/BlazeFaceInputTest.kt` | They import `:platform`'s JVM classes from an Android test source set. `verify-offline.sh` runs both suites on a bare JVM instead |
+| **No `.aab`** | build config | AGP 8.9.2 × `splits.abi`. APK-only delivery |
 
-### What is unit-tested (154 tests)
+### What is unit-tested (201 tests via `verify-offline.sh`)
 
 | Area | Tests | The property each one pins |
 |---|---|---|
@@ -100,7 +143,7 @@ rough order of likelihood:
 | Clock & skew | `SkewReportTest` (4) | Beyond the bar is a *warning*, never a block; no reference point is `UNVERIFIED`, which is not the same as agreeing. |
 | Calendar arithmetic | `CalendarArithmeticTest` (4) | The epoch-day inverse round-trips across the range, including leap days. |
 | Quality bridge | `QualityBridgeTest` (6) | The `:core` ⇄ `:ui` round trip is lossless where it decides and lossy only where it must be. |
-| `:ui` presentation | 44 tests | See `ui/README.md`: verdict tones, the GREY-is-not-an-accusation lexicon, the ≤4-step machine, the permission state machine, the reducer. |
+| `:ui` presentation | **55** tests | See `ui/README.md`: verdict tones, the GREY-is-not-an-accusation lexicon, the ≤4-step machine, the permission state machine, the reducer. (44 on 2026-09-30.) ⚠️ run by `verify-offline.sh`, **not** by `:ui:test` under an SDK-gated build |
 
 ### What is NOT tested and NOT implemented
 
@@ -157,12 +200,17 @@ at all.**
 The reasoning, in full, is in `ui/build.gradle.kts`. In short:
 
 1. A Compose Multiplatform module in `:ui` could not be compiled here, so it would be entirely
-   unverified — and `:ui` is a module *nobody* can run without an SDK, so an unresolvable
-   Compose artifact would break `./gradlew :core:jvmTest` for a teammate with no interest in UI
-   work. The Compose Multiplatform *plugin* resolves at configuration time for the whole build.
-2. The logic is what needs testing, and the logic is what `ui/src/test` tests: 44 tests that run
-   on a bare JVM with no graphics stack, covering which step is next, whether a failed quality
+   unverified — and the Compose Multiplatform *plugin* resolves at configuration time for the
+   whole build, so an unresolvable Compose artefact would break `sh gradlew :core:jvmTest` for
+   anyone with no interest in UI work. (The companion claim that `:ui` needs an SDK is **false**
+   and is corrected in item 2 below.)
+2. The logic is what needs testing, and the logic is what `ui/src/test` tests: **55** tests that
+   run on a bare JVM with no graphics stack, covering which step is next, whether a failed quality
    gate blocks, what a finding is called in Hindi, and whether GREY renders as an accusation.
+   ⚠️ Point 1 above said `:ui` is "a module nobody can run without an SDK". That was **wrong when
+   written and is wrong now**: `settings.gradle.kts` does **not** gate `:ui` on the SDK, it is a
+   plain `kotlin-jvm` module, and `sh gradlew :ui:test` runs with or without an SDK. The real
+   reason for not making it Compose was the configuration-time plugin resolution, which stands.
 3. The cost is real and worth naming: the Compose binding is a *separate* piece of work.
    `:app-android` ships one; a desktop agent writes a second. Both are ~200 lines of leaf code
    that cannot contain a verdict decision, because the decision lives in `VerdictPresenter`.

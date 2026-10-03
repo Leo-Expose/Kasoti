@@ -41,6 +41,7 @@ import dev.kasoti.android.R
 import dev.kasoti.i18n.Language
 import dev.kasoti.ui.AppState
 import dev.kasoti.ui.FieldStrings
+import dev.kasoti.ui.FieldView
 import dev.kasoti.ui.FlowController
 import dev.kasoti.ui.PermissionState
 import dev.kasoti.ui.QuadMode
@@ -53,7 +54,8 @@ import dev.kasoti.ui.blockingInstruction
 import kotlin.math.roundToInt
 
 /**
- * The Jetpack Compose screens for `dev.kasoti.ui` (DESIGN.md §1, D7).
+ * The `FieldView` implementation this module ships, and the metrics the screens below render with
+ * (DESIGN.md §1, D7).
  *
  * ## What this file is, and what it is not
  *
@@ -76,42 +78,17 @@ import kotlin.math.roundToInt
  *  3. [Watermark] is drawn whenever `AppState.watermark` is non-null, over everything.
  *  4. No `Finding.message` is ever rendered — only `FindingRow.text`, which came from
  *     `Messages.of(code, language)`.
- */
-object ComposeFieldView {
-
-    /**
-     * The verdict type scale, in `sp`.
-     *
-     * `sp` and not `dp` so it respects the system font size, which is the accessibility
-     * requirement in the review checklist. Large because SPEC §3 demands a *giant* verdict, and
-     * because the largest thing on a screening screen should be the one thing an officer acts on.
-     */
-    const val HEADLINE_SP = 96
-
-    /** Finding lines, for the same reason. */
-    const val BODY_SP = 20
-
-    /**
-     * 64dp minimum touch target.
-     *
-     * Material's 48dp is a *bare-hands* figure. SPEC §3 says this app is used with gloves on, in
-     * dust, one-handed, by someone who is not looking down. A 48dp target is a mis-tap here, and
-     * a mis-tap in this app is an accusation or a missed screening.
-     */
-    val MIN_TOUCH: Dp = 64.dp
-
-    const val VERDICT_TAG = "verdict"
-}
-
-/**
- * The `FieldView` implementation this module ships.
  *
- * It is a *recorder and a forwarder*, not a renderer: rendering is the composables above it. Its
- * job is to make the `dev.kasoti.ui.FieldView` contract real in one place — an activity holds one
- * of these, pushes every `UiEvent` through it, and renders the `AppState` it hands back. That is
- * what makes "the same reducer drives the phone and, later, the console" a structural fact rather
- * than a convention, and it is the reason a desktop agent can add a second renderer without
- * re-deriving a single behaviour.
+ * ## The metrics are a `companion`, not a second `object` of the same name
+ *
+ * This file used to declare `object ComposeFieldView` for [HEADLINE_SP] & friends *and* `class
+ * ComposeFieldView` for the [FieldView] implementation, which is a redeclaration — Kotlin allows
+ * one top-level declaration per name per package, so only one of the two could ever exist and the
+ * file did not compile at all. The constants moved into this class's `companion object` rather
+ * than into a renamed holder because **every call site already spells them `ComposeFieldView.X`**,
+ * including one KDoc in `QuadHandleOverlay.kt`, and a companion resolves through the class name —
+ * so the fix is zero call-site churn and it keeps the name `FieldView.kt` in `:ui` already
+ * documents as "the Android implementation of this interface".
  *
  * @param onDispatch the reducer. Injected rather than called directly so a test can observe
  *   every transition, and so the activity is not forced to expose `FlowController` as its own
@@ -131,6 +108,33 @@ class ComposeFieldView(
     }
 
     fun send(state: AppState, event: UiEvent): AppState = onDispatch(state, event)
+
+    companion object {
+
+        /**
+         * The verdict type scale, in `sp`.
+         *
+         * `sp` and not `dp` so it respects the system font size, which is the accessibility
+         * requirement in the review checklist. Large because SPEC §3 demands a *giant* verdict, and
+         * because the largest thing on a screening screen should be the one thing an officer acts
+         * on.
+         */
+        const val HEADLINE_SP = 96
+
+        /** Finding lines, for the same reason. */
+        const val BODY_SP = 20
+
+        /**
+         * 64dp minimum touch target.
+         *
+         * Material's 48dp is a *bare-hands* figure. SPEC §3 says this app is used with gloves on, in
+         * dust, one-handed, by someone who is not looking down. A 48dp target is a mis-tap here, and
+         * a mis-tap in this app is an accusation or a missed screening.
+         */
+        val MIN_TOUCH: Dp = 64.dp
+
+        const val VERDICT_TAG = "verdict"
+    }
 }
 
 /** The minimum touch target, applied to every interactive control below. */
@@ -792,8 +796,16 @@ private val SURFACE_STOP = Color(0xFFB3261E)
 private val ON_STOP = Color(0xFFFFFFFF)
 private val STOP_EDGE = Color(0xFF7F1D1A)
 private val RETAKE_SURFACE = Color(0xFFF4F4F2)
-private val ON_RETAKE = Color(0xFF1C1B1F)
-private val RETAKE_EDGE = Color(0xFF5F6368)
+
+/**
+ * `internal`, not `private`: `QuadHandleOverlay.kt` draws the retake outline and the corner
+ * handles with these two, and they are the same *policy* colours the verdict card uses — a
+ * top-level `private` is file-scoped, so the overlay could not see them and failed to compile.
+ * Widening the visibility is what keeps one definition instead of two copies of a colour that
+ * means "ask again". The rest of this palette stays `private`: nothing outside this file uses it.
+ */
+internal val ON_RETAKE = Color(0xFF1C1B1F)
+internal val RETAKE_EDGE = Color(0xFF5F6368)
 private val RETAKE_BAND = Color(0xFF8A6A00)
 private val SURFACE_SECONDARY = Color(0xFFFFF6E0)
 private val SECONDARY_EDGE = Color(0xFF4A3600)

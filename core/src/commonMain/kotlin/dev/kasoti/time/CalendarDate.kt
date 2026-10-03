@@ -1,5 +1,7 @@
 package dev.kasoti.time
 
+import dev.kasoti.threshold.ThresholdName
+
 /**
  * Proleptic-Gregorian calendar arithmetic with no dependencies and no platform calls.
  *
@@ -69,11 +71,16 @@ object CalendarDate {
      * The window rule is the ICAO/ISO one: values more than [slackYears] ahead of the
      * reference are read as the previous century, otherwise the current one. A birth date
      * of `05` in 2026 is 2005, not 1905; an expiry of `30` in 2026 is 2030, not 1930.
+     *
+     * [slackYears] defaults to the registered `YYMMDD_CENTURY_SLACK_YEARS` because it is a
+     * policy about how old a document may plausibly be — a census record and a passport have
+     * different plausible ages — rather than a property of the calendar. The rest of this file
+     * is genuinely spec-fixed (see the registry's `S02` exemption) and has no such entry.
      */
     fun parseYymmdd(
         text: String,
         referenceYear: Int,
-        slackYears: Int = 15,
+        slackYears: Int = ThresholdName.YYMMDD_CENTURY_SLACK_YEARS.default.toInt(),
     ): IsoDate? {
         if (text.length != 6) return null
         if (!text.all { it in '0'..'9' }) return null

@@ -1,6 +1,7 @@
 package dev.kasoti.desktop
 
 import dev.kasoti.desktop.screen.ConsoleView
+import dev.kasoti.desktop.screen.ModelLocator
 import dev.kasoti.desktop.screen.SvmModelException
 import dev.kasoti.fusion.FindingCode
 import dev.kasoti.mrz.MrzBuilder
@@ -31,10 +32,19 @@ import kotlin.test.assertTrue
  * operator would have seen — which is the actual contract here. A console that computes the
  * right verdict and prints the wrong thing has still failed.
  */
-private class Fixture(val dir: Path) {
+internal class Fixture(
+    val dir: Path,
+    /**
+     * How the macro model is found. Defaults to a locator that can find nothing, so the
+     * missing-model path is exercised by every test in this file unless it asks otherwise —
+     * a test that meant to assert on the MRZ must not be silently asserting on a model's
+     * opinion as well.
+     */
+    locator: ModelLocator = ModelLocator(env = emptyMap(), installRoot = null, workingDir = dir),
+) {
     val home = ConsoleHome(dir)
     val transcript = mutableListOf<String>()
-    val console = Console(home, view = ConsoleView { transcript += it })
+    val console = Console(home, view = ConsoleView { transcript += it }, modelLocator = locator)
 
     val text: String get() = transcript.joinToString("\n")
 
@@ -192,8 +202,12 @@ private class Fixture(val dir: Path) {
 }
 
 /** Run [block] against a fresh console in a temporary directory, then clean it up. */
-private fun withFixture(block: (Fixture) -> Unit) {
-    val fixture = Fixture(createTempDirectory("kasoti-console"))
+internal fun withFixture(
+    locator: ModelLocator? = null,
+    block: (Fixture) -> Unit,
+) {
+    val dir = createTempDirectory("kasoti-console")
+    val fixture = Fixture(dir, locator ?: ModelLocator(env = emptyMap(), installRoot = null, workingDir = dir))
     try {
         block(fixture)
     } finally {

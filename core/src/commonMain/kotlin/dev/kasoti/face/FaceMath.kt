@@ -1,6 +1,8 @@
 package dev.kasoti.face
 
 import dev.kasoti.fusion.FindingCode
+import dev.kasoti.threshold.ThresholdName
+import dev.kasoti.threshold.ThresholdRegistry
 import kotlin.math.sqrt
 
 /**
@@ -136,17 +138,32 @@ object QualityGate {
  * qualities means a poor capture is biased towards *inconclusive* (AMBER) rather than
  * towards a confident RED — the failure mode that would make the system feel like it
  * accuses people for the sake of bad lighting.
+ *
+ * @param registry the operating points in force. Defaulted rather than required so that the
+ *   eval harness and the Android parity tests, which call this without a registry, keep
+ *   compiling — and get exactly the shipped values, because [ThresholdRegistry.defaults] is the
+ *   shipped registry. The verdict path ([dev.kasoti.fusion.readFace]) passes its own run-frozen
+ *   registry, so a re-tuned ramp is honoured where it matters instead of being unreachable.
  */
 fun fuseMatchScore(
     similarity: Float,
     docQuality: Float,
     liveQuality: Float,
+    registry: ThresholdRegistry = ThresholdRegistry.defaults(),
 ): Float {
     val quality = minOf(docQuality.coerceIn(0f, 1f), liveQuality.coerceIn(0f, 1f))
-    // At full quality the score is unchanged; it degrades to 60% of raw at zero quality,
-    // which is enough to pull marginal cases into the AMBER band without hiding strong ones.
-    val temper = 0.6f + 0.4f * quality
-    return (similarity * temper).coerceIn(-1f, 1f)
+    // At full quality the score is unchanged; at zero quality it degrades to
+    // FUSE_TEMPER_FLOOR of raw, which is enough to pull marginal cases into the AMBER band
+    // without hiding strong ones. Both coefficients are registry operating points
+    // (fusion/thresholds.v1.json), and the ramp's defining property -- full quality is
+    // transparent, i.e. the two sum to 1 -- is asserted once when the registry loads rather than
+    // being an assumption in a comment.
+    //
+    // The two are read separately rather than deriving the slope as `1f - floor`, because
+    // 0.4f != 1f - 0.6f in binary32 and deriving it would quietly shift every fused score.
+    val floor = registry[ThresholdName.FUSE_TEMPER_FLOOR].toFloat()
+    val slope = registry[ThresholdName.FUSE_TEMPER_SLOPE].toFloat()
+    return (similarity * (floor + slope * quality)).coerceIn(-1f, 1f)
 }
 
 /** One labelled pair for FAR/FRR estimation (EVAL.md §4). */

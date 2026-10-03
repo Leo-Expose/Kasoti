@@ -38,18 +38,28 @@ G-BLUR · G-GLARE · G-DARK · G-POSE · G-OCCLUDE · G-OCRLOW · G-FOCUS(macro)
 | Vmax | km/h | fixed 120 | config, logged |
 | recheck_p / reverify_days | — | ops default 5% / 30 d | supervisor-adjustable, logged |
 
-⚠️ **State of this table, measured 2026-09-29.** All 34 thresholds exist in
-`core/.../threshold/ThresholdRegistry.kt` with name, unit, tuning-data ref, owner, default,
-floor and ceiling, and the floor/ceiling invariant is tested. **None of them is tuned.** Every
+⚠️ **State of this table: measured 2026-09-29; count re-checked 2026-09-30 (36) and again
+2026-10-03 (48).** The table above is a **summary of the load-bearing thresholds, not the whole
+registry** — it names 8 groups. ⚠️ **2026-10-03: the registry is now 49 thresholds, not 36, and
+the "enum" is no longer where the numbers live.** All 48 are in
+`core/src/commonMain/kotlin/dev/kasoti/fusion/thresholds.v1.json` (the *file* AGENTS.md §2 always
+required) with name, unit, `tuningDataRef`, owner, default, floor and ceiling;
+`ThresholdName` was reduced to **names only** and `ThresholdSpecFileTest` fails if the enum and
+the file ever diverge; the floor/ceiling invariant is tested. ⚠️ **The file is UNTRACKED**
+(`git status` → `??`), so it is in no commit, no clone and no CI run. **None of them is tuned.** Every
 default is a value a human typed: no D-FACE, no D-MACRO, no D-USAB, no device. The two
 face thresholds are therefore *placeholders with safety envelopes*, not operating points, and
 `T_FACE_RED` in particular has never been near a FAR measurement.
 
-**And the file this section calls "truth" does not exist.** `fusion/thresholds.v1.json` is
-absent, so the "one ThresholdRegistry" claim in AGENTS.md §2 and `DESIGN.md` §1 is half-true:
-versioning exists in code, the file does not. The lint that would enforce "no magic numbers
-elsewhere" is also red (171 lines), so nothing prevents a second, unregistered threshold
-appearing. `docs/STATUS.md` R-O and §4.2.
+**And the file this section calls "truth" now exists — but is not committed.** ⚠️ **Corrected
+2026-10-03: this paragraph used to say `fusion/thresholds.v1.json` "is absent".** It is not: it
+exists, with 48 fully-attributed thresholds. So the "one ThresholdRegistry" claim in AGENTS.md §2
+and `DESIGN.md` §1 is now true **of the working tree** — and false of every commit, because the
+file is untracked. Two consequences worth naming: the lint that would enforce "no magic numbers
+elsewhere" is **still red** (**175** lines, re-measured 2026-10-03), so nothing prevents a second,
+unregistered threshold appearing; and detekt's `MagicNumber` count went **up** (968 → 1 004)
+rather than down, so the registry was the diagnosis and is not yet the cure. `docs/STATUS.md` R-O
+and §4.2.
 
 ## 6. Tuning procedure (mandatory, EVAL-gated)
 1. Tune ONLY on tune split; 2. select operating point by policy above; 3. verify on report split (numbers go to deck); 4. freeze (version bump `thresholds.vN.json` + run-id); 5. post-freeze change = incident (lead sign + full smoke + note). Per-bucket gaps (EVAL §4) must be READ aloud at review; worst-bucket FRR>2× best → must add AMBER-bias rule or document mitigation (no silent shipping).

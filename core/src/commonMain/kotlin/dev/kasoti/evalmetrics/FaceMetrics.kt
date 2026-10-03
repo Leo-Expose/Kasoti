@@ -4,6 +4,7 @@ import dev.kasoti.face.Detection
 import dev.kasoti.face.DetectionCurve
 import dev.kasoti.face.PairLabel
 import dev.kasoti.face.PairTrial
+import dev.kasoti.threshold.ThresholdName
 
 /**
  * One point on the TAR/FAR curve, at a requested FAR budget.
@@ -55,6 +56,15 @@ data class FaceEvaluation(
     val perBucket: List<BucketTally>,
     val genuineTrials: Int,
     val impostorTrials: Int,
+    /**
+     * FUSION.md §6's "more than twice the best" ratio, from `FACE_BUCKET_GAP_MAX_RATIO`.
+     *
+     * Carried on the result rather than read from the registry at the comparison so that a
+     * report states the bar it applied. With the default it is exactly the 2.0 the rule has
+     * always used; a caller that re-tuned it would otherwise publish a verdict whose bar
+     * nothing in the output mentions.
+     */
+    val bucketGapMaxRatio: Double = ThresholdName.FACE_BUCKET_GAP_MAX_RATIO.default,
 ) {
     val frrAtOperatingPoint: Double get() = operatingPoint.frr
 
@@ -76,7 +86,7 @@ data class FaceEvaluation(
             return if (best > 0.0) worst / best else if (worst > 0.0) Double.POSITIVE_INFINITY else 1.0
         }
 
-    val bucketGapExceedsPolicy: Boolean get() = bucketGapRatio?.let { it > 2.0 } ?: false
+    val bucketGapExceedsPolicy: Boolean get() = bucketGapRatio?.let { it > bucketGapMaxRatio } ?: false
 
     fun toJson(): MetricJson.Obj = jsonOf(
         "genuineTrials" to MetricJson.Num(genuineTrials.toDouble()),
@@ -101,8 +111,11 @@ data class FaceEvaluation(
  */
 object FaceMetrics {
 
-    /** EVAL.md §4 names 1% and 0.1%; the operating point is taken at the strictest. */
-    val DEFAULT_FAR_TARGETS = listOf(0.01, 0.001)
+    /** EVAL.md §4 names 1% and 0.1%; both are registered, and the operating point is the strictest. */
+    val DEFAULT_FAR_TARGETS = listOf(
+        ThresholdName.FACE_FAR_TARGET_COARSE.default,
+        ThresholdName.FACE_FAR_TARGET_STRICT.default,
+    )
 
     fun evaluate(
         trials: List<PairTrial>,

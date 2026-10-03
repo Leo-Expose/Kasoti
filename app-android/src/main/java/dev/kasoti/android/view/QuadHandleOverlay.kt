@@ -141,7 +141,6 @@ private fun QuadHandleOverlay(quad: Quad, onHandleMoved: (Int, x: Float, y: Floa
             }
         }
     }
-}
 
 /**
  * Replace one corner, keeping the quad's clockwise corner order.

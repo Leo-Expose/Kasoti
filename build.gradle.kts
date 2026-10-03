@@ -33,6 +33,29 @@ plugins {
     // five build scripts to drop a working pin is not a change this one deserves.
     alias(libs.plugins.kotlin.jvm) apply false
     alias(libs.plugins.kotlin.multiplatform) apply false
+    // Declared here, with `apply false`, purely to put the Kotlin Android plugin on the
+    // buildscript classpath WITH A KNOWN VERSION. Without it, a module that applies the
+    // Kotlin Android plugin hits "the plugin is already on the classpath with an unknown
+    // version": `:core` pulls AGP in for its `androidTarget()`, and AGP drags the Kotlin
+    // Android plugin along without a version, so any later versioned request is refused.
+    // Nothing applies it at the root — `:app-android` does, once its SDK gate opens.
+    alias(libs.plugins.kotlin.android) apply false
+    // Same reason, one step further: AGP must also be on the ROOT buildscript classpath,
+    // because `com.android.tools.build:gradle` is the artifact that actually contains
+    // `com.android.build.gradle.api.BaseVariant`. Resolving AGP only inside `:app-android`
+    // puts it in that project's plugin classloader, where the Kotlin Android plugin cannot
+    // see it, and applying kotlin.android dies with
+    // `NoClassDefFoundError: com/android/build/gradle/api/BaseVariant`. Declaring it here
+    // puts it where both plugins can reach it. Nothing applies it at the root.
+    alias(libs.plugins.android.application) apply false
+    // The same trap, one id over. `com.android.application` and `com.android.library` are two
+    // plugin ids inside the *same* `com.android.tools.build:gradle` jar, so declaring the first
+    // above already puts AGP on the root classpath. A versioned request for the second from any
+    // subproject — which is what `core/build.gradle.kts:5` does — is then refused with "the
+    // plugin is already on the classpath with an unknown version". Both ids have to be named
+    // here for both to resolve. This is the `apply false` declaration only: `:core` decides
+    // whether to *apply* it from the SDK gate, and nothing applies it at the root.
+    alias(libs.plugins.android.library) apply false
 }
 
 allprojects {

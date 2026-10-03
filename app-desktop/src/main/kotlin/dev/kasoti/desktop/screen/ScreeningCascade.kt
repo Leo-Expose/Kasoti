@@ -54,7 +54,22 @@ data class ScreeningRequest(
     val consecutiveGreyCount: Int = 0,
     /** Verbatim officer-typed MRZ rows; overrides OCR when present (BUILD.md §5). */
     val manualMrz: List<String> = emptyList(),
-    val classifier: dev.kasoti.factory.ProcessClassifier? = null,
+    /**
+     * The macro model for this run, with its provenance, or `null` when none was provisioned.
+     *
+     * `null` and a non-discriminative model are different states and the console renders them
+     * differently — see [MacroModel]. Collapsing them into a bare `ProcessClassifier?` is what
+     * let an untrained stub print a process label.
+     */
+    val macroModel: MacroModel? = null,
+    /**
+     * How to provision a macro model, printed into the `macro` layer's `UNAVAILABLE` row.
+     *
+     * Carried on the request rather than looked up in the layer, because the layer is the one
+     * place a secondary reviewer will look when the reading they expected is not there, and
+     * "UNAVAILABLE" on its own tells them nothing they can act on.
+     */
+    val modelSearchNote: String = "--svm PATH, or the KASOTI_SVM_MODEL environment variable",
     val clipUsed: Boolean = true,
     /** Print `:core`'s own rationale lines under the verdict. */
     val showRationale: Boolean = true,

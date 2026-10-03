@@ -100,7 +100,7 @@ after a revocation mid-screening. Tested.
 ```bash
 # :ui is ALWAYS in the build. It is plain kotlin-jvm — no Android, no Compose, no SDK
 # needed — so this works identically with or without an Android SDK present:
-./gradlew :ui:test          # 44 tests
+sh gradlew :ui:test          # 55 tests, 0 failures (measured 2026-10-03; 44 on 2026-09-30)
 
 # app-android/tools/verify-offline.sh also compiles and tests this module, as part of
 # its tier-1 pass. That is a second, independent path, not the only path.
@@ -117,7 +117,17 @@ SDK, it is stale: CI runs `./gradlew :ui:test` unconditionally, with no SDK-dete
 
 ## 5. Unverified
 
-Everything in this module is compiled and tested (44 tests, green). What has **not** been
-verified is the *binding*: no `FieldView` implementation here has been compiled, because both
-candidate renderers live in modules that need the SDK. The interface is small enough to implement
-in an afternoon, which is the point of having made it an interface.
+Everything in this module is compiled and tested (**55 tests**, green, measured 2026-10-03).
+What has **not** been verified is the *binding* — and this section was wrong twice, in both
+directions, so here is the precise state:
+
+| Claim | Was | Is (2026-10-03) |
+|---|---|---|
+| Both candidate renderers live in modules that need an SDK | asserted since this file was written | ✅ the **Android** renderer (`app-android/.../view/ComposeFieldView.kt`) is in modules that need an SDK, and it now **compiles and ships inside four APKs** |
+| No `FieldView` implementation has been compiled | asserted since this file was written | ❌ **no longer true** — the Android one has been through AGP and the Compose compiler |
+| A **desktop** `FieldView` renderer | never existed | ❌ **still does not exist.** This is the remaining gap, and it is a *missing feature*, not an uncompiled one |
+| Either renderer has been **displayed** | — | ❌ **never.** No device has run the app, and there is no desktop renderer, so `FieldView` has never been rendered anywhere |
+
+So the honest summary is: the logic is tested, one binding compiles, **no binding has ever been
+run**, and the desktop binding is not written. The interface is small enough to implement the
+desktop one in an afternoon, which is the point of having made it an interface.

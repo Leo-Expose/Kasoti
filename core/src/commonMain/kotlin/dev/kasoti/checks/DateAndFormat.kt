@@ -1,6 +1,7 @@
 package dev.kasoti.checks
 
 import dev.kasoti.fusion.FindingCode
+import dev.kasoti.threshold.ThresholdName
 import dev.kasoti.time.CalendarDate
 import dev.kasoti.time.IsoDate
 
@@ -68,8 +69,9 @@ object DateLogic {
             }
         }
 
-        // A holder cannot be older than 130; a "born" date further back is a data error,
-        // not a real person, and silently accepting it would let a forger pad the field.
+        // A holder cannot be older than MAX_PLAUSIBLE_AGE; a "born" date further back is a
+        // data error, not a real person, and silently accepting it would let a forger pad the
+        // field. The number is registered (MAX_PLAUSIBLE_AGE) because it decides a verdict.
         birthDate?.let {
             val age = CalendarDate.yearsBetween(it, today)
             if (age > MAX_PLAUSIBLE_AGE) {
@@ -84,7 +86,8 @@ object DateLogic {
         return out
     }
 
-    const val MAX_PLAUSIBLE_AGE = 130
+    val MAX_PLAUSIBLE_AGE: Int
+        get() = ThresholdName.MAX_PLAUSIBLE_AGE.default.toInt()
 }
 
 /** Structural validators for the domestic document tracks (FR-M3). */

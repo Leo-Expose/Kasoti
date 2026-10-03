@@ -108,10 +108,15 @@ enum class QuadMode { AUTO, MANUAL }
 /**
  * Which of the two macro patches is being taken, plus the sharpness bar (FR-C3).
  *
- * A sharpness of `0f` is the "not taken yet" sentinel rather than a nullable, because it is
- * also what the bar renders as empty, and a bar with a hole in it reads correctly to an
- * operator in a way that a missing row does not. [awaiting] is the single place that
- * convention is applied.
+ * The two sharpnesses are `CaptureQuality.Sharpness.fraction` values — 0..1 *against the
+ * `Q_BLUR` bar*, so `1f` means "at or above the bar" and `0f` means "nothing measured yet".
+ * `0f` is the "not taken yet" sentinel rather than a nullable because it is also what the bar
+ * renders as empty, and a bar with a hole in it reads correctly to an operator in a way that a
+ * missing row does not. [awaiting] is the single place that convention is applied.
+ *
+ * What this type deliberately does NOT carry is the field layer's verdict on the pair. See
+ * [awaiting] and [ready] for why, and `MacroStage.Stage.canAdvance` in `:app-android` for the
+ * check that *is* authoritative.
  */
 data class MacroCard(
     val photoZoneSharpness: Float,
@@ -126,13 +131,46 @@ data class MacroCard(
      * set *from* this, which meant the reducer wrote a derived value back into the object it
      * was derived from — a cycle that deadlocked the second patch, because "both patches
      * taken" could never become true. `ready` is now derived too, and neither can disagree.
+     *
+     * ## `>= 1f`, not `> 0f` — this is the load-bearing comparison
+     *
+     * "Taken" means **fully taken**: the patch cleared the `Q_BLUR` bar. `fraction` is
+     * `(blurVariance / Q_BLUR).coerceIn(0f, 1f)`, so `fraction >= 1f` is *exactly* the
+     * predicate `CaptureQuality.Sharpness.passed` is computed from, and a patch in `(0, 1)` is
+     * a patch that was taken **and blurred**.
+     *
+     * The earlier `> 0f` form read any taken-but-blurry patch as taken, which meant the macro
+     * card could report `DONE` — and therefore light the shutter — on a pair the field layer's
+     * `MacroStage.Stage.canAdvance` would have refused. The UI was offering an action the
+     * verdict path would then fail closed on. That is the whole defect.
+     *
+     * ## Which one is authoritative for the shutter
+     *
+     * **`MacroStage.Stage.canAdvance` is.** It is the field-layer check, it is not derived from
+     * this class, and nothing in this class can weaken or override it: `:ui` has no access to
+     * `Stage`, and `canAdvance` is what `MainActivity` consults before a macro step advances.
+     * `MacroCard.ready` is a *presentation* predicate — "both patches have been taken sharply
+     * enough to be worth submitting" — and it is deliberately derived, not stored, so the two
+     * cannot disagree about the *sharpness* half. The invariant that keeps them honest is that
+     * `fraction >= 1f` and `Sharpness.passed` are the same predicate over the same bar
+     * (`Q_BLUR`, whose registry range is `[30, 400]`, so the bar can never be zero and the
+     * `0/0` NaN case cannot arise). `MacroCardShutterGateTest` and `MacroStageTest` in
+     * `:app-android` both assert that identity rather than asserting it in prose.
      */
     val awaiting: MacroZoneSlot get() = when {
-        photoZoneSharpness <= 0f -> MacroZoneSlot.PHOTO
-        textZoneSharpness <= 0f -> MacroZoneSlot.TEXT
+        photoZoneSharpness < 1f -> MacroZoneSlot.PHOTO
+        textZoneSharpness < 1f -> MacroZoneSlot.TEXT
         else -> MacroZoneSlot.DONE
     }
 
+    /**
+     * Whether both FR-C3 patches have been taken *at or above the `Q_BLUR` bar*.
+     *
+     * This gates the shutter button's `enabled` (see `ComposeFieldView.MacroCardScreen`). It is
+     * deliberately **not** "the field layer would advance": that is [awaiting] AND both patches
+     * in focus, which only `MacroStage.Stage.canAdvance` can say, and the field layer is what
+     * applies it. Derived, never stored — see [awaiting].
+     */
     val ready: Boolean get() = awaiting == MacroZoneSlot.DONE
 
     companion object {

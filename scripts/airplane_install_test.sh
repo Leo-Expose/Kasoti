@@ -17,10 +17,13 @@
 #   rather than exiting green.
 #
 # ############################################################################
-# #  STATUS: no APK exists yet (:app-android is only wired when an SDK is   #
-# #  discoverable — settings.gradle.kts; :ui is always in the build). Until #
-# #  :app-android builds, this script exits 2 with a precise "artefact      #
-# #  missing" message. That is correct.                                    #
+# #  STATUS (updated 2026-10-03): :app-android DOES build on a machine with#
+# #  an SDK, and it now produces ONE APK PER ABI (armeabi-v7a, arm64-v8a)  #
+# #  rather than a single universal one — see the `splits.abi` ADR in        #
+# #  app-android/build.gradle.kts. Step A below therefore enumerates every  #
+# #  artefact and size-checks all of them; only the install step picks one.  #
+# #  There is no emulator (x86/x86_64) build: it was 35.95 MB, over the     #
+# #  35 MB budget.                                                          #
 # ############################################################################
 #
 # EXIT CODES: 0 = full proof (artefact + bundle + device install) ·
@@ -67,12 +70,23 @@ fail() { printf '\nFAIL  %s\n' "$1" >&2; }
 
 say "A. build artefact"
 
+# ABI splits (app-android/build.gradle.kts, the `splits.abi` ADR): there is NO universal APK and
+# no `app-android-debug.apk` any more. `assembleDebug` emits one APK per shipped ABI, so this
+# script has to enumerate them.
+#
+# EVERY discovered APK is size-checked, not just the one that gets installed. Picking one file
+# and measuring that is the same bug as "measure the smallest artifact": an over-budget sibling
+# would sail through. Which one is *installed* is a separate question answered by --apk or, on
+# a device-attached run, by the operator passing the right ABI (adb will say
+# INSTALL_FAILED_NO_MATCHING_ABIS if it is wrong).
 if [[ -z "$APK" ]]; then
-  APK="$(find . -path ./\.git -prune -o -type f \( -name '*.apk' -o -name '*.aab' \) \
-    -path '*/build/outputs/*' -print 2>/dev/null | sort | head -n 1 || true)"
+  mapfile -t ALL_APKS < <(find . -path ./\.git -prune -o -type f \( -name '*.apk' -o -name '*.aab' \) \
+    -path '*/build/outputs/*' -print 2>/dev/null | sort)
+else
+  ALL_APKS=("$APK")
 fi
 
-if [[ -z "$APK" || ! -f "$APK" ]]; then
+if [[ "${#ALL_APKS[@]}" -eq 0 ]]; then
   fail "no APK/AAB build output found."
   cat >&2 <<EOF
 
@@ -89,21 +103,44 @@ if [[ -z "$APK" || ! -f "$APK" ]]; then
   (:ui is NOT affected — it is always in the build; this message used to claim
   otherwise, which was wrong.)
 
+  :app-android now produces one APK per ABI (armeabi-v7a, arm64-v8a). Pick the
+  one matching the device with --apk; there is no single APK that fits both.
+
   Then re-run:  ./scripts/airplane_install_test.sh
 EOF
   exit 2
 fi
 
-APK_SIZE_MB="$(awk -v b="$(stat -c %s "$APK")" 'BEGIN { printf "%.1f", b / 1048576 }')"
-echo "FOUND  $APK  (${APK_SIZE_MB} MB)"
-APK_SHA="$(sha256sum "$APK" | awk '{print $1}')"
-echo "SHA256 $APK_SHA"
+OVER_BUDGET=()
+for candidate in "${ALL_APKS[@]}"; do
+  CANDIDATE_MB="$(awk -v b="$(stat -c %s "$candidate")" 'BEGIN { printf "%.2f", b / 1048576 }')"
+  printf 'FOUND  %s  (%s MB)\n' "$candidate" "$CANDIDATE_MB"
+  if awk -v m="$CANDIDATE_MB" -v g="$MAX_APK_MB" 'BEGIN { exit !(m > g) }'; then
+    OVER_BUDGET+=("$candidate ($CANDIDATE_MB MB)")
+  fi
+done
 
-if awk -v m="$APK_SIZE_MB" -v g="$MAX_APK_MB" 'BEGIN { exit !(m > g) }'; then
-  fail "APK is ${APK_SIZE_MB} MB, over the ${MAX_APK_MB} MB budget (BUILD.md §3)."
+if [[ "${#OVER_BUDGET[@]}" -gt 0 ]]; then
+  for bad in "${OVER_BUDGET[@]}"; do
+    fail "$bad is over the ${MAX_APK_MB} MB budget (BUILD.md §3)."
+  done
+  echo "      Every produced artefact is gated, not just the one being installed." >&2
   echo "      Do not ship it — find what got bundled (models? debug symbols?) first." >&2
   exit 1
 fi
+
+# With splits there are several candidates, so "the first one alphabetically" is arbitrary.
+# Prefer the release build when both exist (it is the shipping artefact), else the first.
+APK="${ALL_APKS[0]}"
+for candidate in "${ALL_APKS[@]}"; do
+  if [[ "$candidate" == *"/apk/release/"* ]]; then
+    APK="$candidate"
+    break
+  fi
+done
+echo "INSTALL CANDIDATE  $APK"
+APK_SHA="$(sha256sum "$APK" | awk '{print $1}')"
+echo "SHA256 $APK_SHA"
 
 say "B. bundled model / key integrity (invariant I12, AT-12)"
 if [[ $SKIP_BUNDLE -eq 1 ]]; then

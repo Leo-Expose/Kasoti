@@ -1,0 +1,19 @@
+case: case_01M3RP25DGDZ0SYBN0QXFD8G1A
+verdict: RED
+track: PASSPORT
+threshold: v1
+fusion: fusion-v1
+demo: true
+findings:
+  R_PROC_01 macro/text-zone#SCREEN@1.000 text-zone reads SCREEN at margin 1.000 while a reprint document was claimed
+  R_PROC_02 macro/photo-zone,macro/text-zone#MISMATCH photo zone DYESUB at 1.000 vs text zone SCREEN at 1.000; both above the RED margin 0.350
+  M_OK mrz/checks#all-pass every check digit agreed
+layers:
+  image RAN 640x400 gray, mean 0.825
+  quality RAN brightness 210.278 within [40.000, 225.000]
+  quality.appearance UNAVAILABLE blur/glare/pose need the capture pipeline; a file import cannot attest them
+  math RAN TD3; all check digits pass
+  qr SKIPPED no QR supplied
+  macro RAN photo=DYESUB(margin=1.000, model=DYESUB) text=SCREEN(margin=1.000, model=SCREEN) clip=true (under the margin floor a patch reads UNKNOWN, not its best guess)
+  face UNAVAILABLE no embedding interpreter bound (M2)
+  diary UNAVAILABLE dev.kasoti.diary not yet in :core (M2)

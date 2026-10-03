@@ -1,0 +1,20 @@
+case: case_01M3RSCVAGC0JD31Y7M7TYVTWY
+verdict: RED
+track: PAPER_ID
+threshold: v1
+fusion: fusion-v1
+demo: true
+findings:
+  R_MATH_01 mrz/COMPOSITE#check-digit check digit failed for COMPOSITE
+  R_MATH_01 mrz/DOCUMENT_NUMBER#check-digit check digit failed for DOCUMENT_NUMBER
+  R_PROC_01 macro/text-zone#SCREEN@1.000 text-zone reads SCREEN at margin 1.000 while a physical document was claimed
+  R_PROC_02 macro/photo-zone,macro/text-zone#MISMATCH photo zone DYESUB at 1.000 vs text zone SCREEN at 1.000; both above the RED margin 0.350
+layers:
+  image RAN 640x400 gray, mean 0.825
+  quality RAN brightness 210.278 within [40.000, 225.000]
+  quality.appearance UNAVAILABLE blur/glare/pose need the capture pipeline; a file import cannot attest them
+  math RAN TD3; check digit failure in [COMPOSITE, DOCUMENT_NUMBER]
+  qr SKIPPED no QR supplied
+  macro RAN photo=DYESUB(margin=1.000, model=DYESUB) text=SCREEN(margin=1.000, model=SCREEN) clip=true (under the margin floor a patch reads UNKNOWN, not its best guess)
+  face UNAVAILABLE no embedding interpreter bound (M2)
+  diary UNAVAILABLE dev.kasoti.diary not yet in :core (M2)

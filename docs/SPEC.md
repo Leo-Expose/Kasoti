@@ -4,7 +4,9 @@
 > exists. For what is true today read `docs/STATUS.md` — and note that four of the six
 > assumptions in §10 are currently false, including the ones that carry the face and
 > signed-QR layers. Acceptance criteria in §6 are unmet in full: no milestone has been
-> accepted, `:app-android` has never been compiled, and no red-team day has been run.
+> accepted, `:app-android` has never been **run on a device** (it has compiled and packaged
+> since 2026-10-03, and no `.aab` can be produced from this build), and no red-team day has been
+> run.
 
 ## 1. Goals
 G1. Screen identity documents at SSB checkpoints **offline**, verdict in seconds.
@@ -112,11 +114,17 @@ N5. No age/gender estimation, no emotion/behavior scoring, no predictive policin
 A1. ~~Team ~6, mixed; Android-strong; ≥1 person owns eval/data full-time in M0–M1.~~
 **Superseded by reality: the project is solo-maintained** (`docs/HANDOFF.md` §2), and the
 `solo-founder variant` in `ROADMAP.md` §7 is what is being built rather than a contingency.
-A2. ⚠️ **NOT MET** — ≥2 physical Android devices (one low-end) + Win + Linux laptops for desktop.
-**Zero Android devices and no Android SDK**; the dev host is Linux, so Windows and
+A2. ⚠️ **STILL NOT MET — but for half the original reason, and the change is dated.** It used to
+read "**Zero Android devices and no Android SDK**". ⚠️ **Corrected 2026-10-03: an Android SDK is
+now installed** (`local.properties` `sdk.dir=`, `ANDROID_HOME=/opt/android-sdk`) and
+`:app-android` compiles and packages four APKs within the 35 MB budget. **Still zero Android
+devices and no `adb`**, so nothing has been installed or run, and NFR-S1's installable-offline
+half, NFR-R1's 50 crash-free runs and §6 M1 have no exit. The dev host is Linux, so Windows and
 Apple-Silicon desktop are additionally "review-only, no on-device inference" for lack of any
 TFLite native (`docs/BUILD.md` §4, spike 01 §4). The dev checkout is on an **exFAT volume that
-ignores `chmod`**, so provisioning must target `~/.kasoti/provisioning`, not the repo.
+ignores `chmod`**, so provisioning must target `~/.kasoti/provisioning`, not the repo. There is
+also **no `.aab`** — `:app-android:bundleRelease` fails on AGP 8.9.2 with ABI splits, so delivery
+is APK-only.
 A3. ⚠️ **NOT MET** — no genuine IDs have been contributed. `eval/data/` exists with manifests
 and split declarations; **every dataset has zero media rows.**
 A4. No real e-passport sample guaranteed → NFC stub-first. (Unchanged; still true.)

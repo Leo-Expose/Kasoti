@@ -44,9 +44,6 @@ object SvmModelFile {
     fun loadWithProvenance(path: Path): LoadedSvmModel =
         read { SvmModelReader.parse(Files.readString(path), path.toString()) }
 
-    /** The default location, checked before `--svm` is so a provisioned console needs no flag. */
-    fun defaultPath(): Path = Path.of(DEFAULT_PATH)
-
     /**
      * A model may only be used when the operator has said so explicitly.
      *
@@ -55,13 +52,25 @@ object SvmModelFile {
      * present means an accidental run cannot put a meaningless label in front of anyone.
      */
     fun requireUsable(model: SvmModel, demoMode: Boolean) {
-        if (model.trainingRunId == DemoSvm.TRAINING_RUN_ID && !demoMode) {
+        if (!isDiscriminative(model) && !demoMode) {
             throw SvmModelException(
                 "'${model.version}' is the untrained demo stub; pass --demo to use it, " +
-                    "or provision the real svm_print_v1.json",
+                    "or provision the real $DEFAULT_FILE_NAME",
             )
         }
     }
+
+    /**
+     * Whether this model can actually distinguish a print process.
+     *
+     * The demo stub's weights are all zero, so it returns an argmax for every patch with a
+     * margin of exactly `0.000` — a label with no information behind it. That is the whole
+     * test, and it is keyed on the stub's own training-run id rather than on a flag passed
+     * alongside the model, so "is this thing trained?" cannot drift from "was the model
+     * usable?" — the two used to be separate questions and answering them differently is how
+     * `--demo` came to print `model=OFFSET` as though it were a reading.
+     */
+    fun isDiscriminative(model: SvmModel): Boolean = model.trainingRunId != DemoSvm.TRAINING_RUN_ID
 
     fun classifierFor(model: SvmModel): ProcessClassifier = ProcessClassifier(model)
 
@@ -69,14 +78,29 @@ object SvmModelFile {
     fun expectedFeatureNames(): List<String> = SvmModelReader.expectedFeatureNames()
 
     /**
-     * The D-MACRO model path, and the committed synthetic one after it.
+     * The D-MACRO model file name, and the committed synthetic one after it.
      *
-     * Checked in that order by [Console]. A real model is always preferred even when the synthetic
-     * file is present, because the alternative is a console that keeps reporting the synthetic
-     * number after real data has landed.
+     * Checked in that order by [ModelLocator]. A real model is always preferred even when the
+     * synthetic file is present, because the alternative is a console that keeps reporting the
+     * synthetic number after real data has landed.
      */
-    const val DEFAULT_PATH: String = "eval/models/svm_print_v1.json"
-    const val SYNTHETIC_PATH: String = "eval/models/svm_print_v1_synthetic.json"
+    const val DEFAULT_FILE_NAME: String = "svm_print_v1.json"
+    const val SYNTHETIC_FILE_NAME: String = "svm_print_v1_synthetic.json"
+
+    /**
+     * The same two files, addressed as a source checkout holds them.
+     *
+     * These are **relative on purpose and are only ever resolved against an explicit working
+     * directory** ([ModelLocator] does the joining; nothing here calls `Path.of(DEFAULT_PATH)`
+     * and hopes). They used to be consumed as bare CWD-relative strings by `Console`, which is
+     * what made a provisioned console abstain on every patch: the path was resolved against
+     * whatever directory the operator happened to be standing in, and an unpacked distribution
+     * has no `eval/` at all. A repository-relative path is correct for a developer at a
+     * checkout and wrong everywhere else, so it is a *last* resort with a name attached
+     * rather than the first thing tried.
+     */
+    const val DEFAULT_PATH: String = "eval/models/$DEFAULT_FILE_NAME"
+    const val SYNTHETIC_PATH: String = "eval/models/$SYNTHETIC_FILE_NAME"
 
     /**
      * Re-raise `:core`'s format refusal as [SvmModelException].

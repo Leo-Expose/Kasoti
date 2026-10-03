@@ -6,6 +6,7 @@ import dev.kasoti.android.field.CaptureQuality
 import dev.kasoti.android.field.EvidenceAssembler
 import dev.kasoti.android.field.FieldLog
 import dev.kasoti.android.field.FieldLogEntry
+import dev.kasoti.android.field.FieldLogFormat
 import dev.kasoti.android.field.FixedClock
 import dev.kasoti.android.field.IdFactory
 import dev.kasoti.android.field.InMemoryEnrolmentStore
@@ -20,7 +21,6 @@ import dev.kasoti.android.platform.defaultDigest
 import dev.kasoti.threshold.ThresholdName
 import dev.kasoti.threshold.ThresholdRegistry
 import dev.kasoti.time.IsoDate
-import java.io.File
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -202,7 +202,7 @@ class AppGraph(context: Context) {
         // init: provisioning writes `ProvisionedPins` after the graph exists, and a delegate
         // would have frozen the pre-provisioning "refuse everything" value forever.
         verifiedDetector = load(ModelStore.DETECT_ASSET, "blazeface_short", ProvisionedPins.blazefaceShort)
-        verifiedEmbedder = load(ModelStore.EMBED_ASSET, "emb_v1", ProvisionedPins.embeddingV1)
+        verifiedEmbedder = load(ModelStore.EMB_ASSET, "emb_v1", ProvisionedPins.embeddingV1)
     }
 
     private fun load(asset: String, name: String, pin: ModelPinSource): dev.kasoti.android.platform.ModelPinLoader.VerifiedModel? {
@@ -221,7 +221,9 @@ class AppGraph(context: Context) {
             modelLoader.load(
                 dev.kasoti.android.platform.ModelPin(
                     name = name,
-                    file = File(ModelStore.file(appContext, name)),
+                    // `ModelStore.file` already returns a `File`; the `File(...)` wrapper this
+                    // used to be wrapped in has no `File(File)` overload, so it never compiled.
+                    file = ModelStore.file(appContext, name),
                     sha256 = sha,
                     minimumBytes = pin.minimumBytes,
                 ),

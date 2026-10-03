@@ -52,7 +52,7 @@ cannot disagree.
 ⚠️ **Consequence for CI: every run available today exits 4, not 0.** A skipped suite is a
 first-class state and makes the run INCOMPLETE — and the device gates (`L-GATE-02`,
 `MACRO-CAL`, `MACRO-CLS`, `F-GATE-01`, `F-GATE-03`, `P-GATE-01`) are *always* skipped without a
-device and a calibration file. `.github/workflows/ci.yml:96` runs `:eval:run --args="smoke"`
+device and a calibration file. `.github/workflows/ci.yml:183` runs `:eval:run --args="smoke"`
 without `continue-on-error`, so the `verify` job **fails at that step by design**. Measured
 2026-09-29: `smoke` = 11 pass / 1 skip / 0 fail, exit 4; `full` = 13 pass / 6 skip / 0 fail,
 exit 4. Do not "fix" this by making a skipped gate pass (`docs/STATUS.md` R-J).

@@ -24,9 +24,12 @@ Theme: truth before screens. No UI beyond debug screens.
 
 **M0 exit:** first real numbers exist (however bad) · sync file round-trips · clip exists · model decision locked. **Decision dates:** embed/detector **closed 2026-09-30** — detector adopted, embedder rejected on licence grounds (`docs/spikes/01-face-model.md`) · OCR route **undecided and undecidable** without a build.
 
-**M0 status: not exited.** `:core` and the harness are done and green (620 tests across four
-modules; `smoke` 11 pass/1 skip, `full` 13 pass/6 skip — run `eval-20260929-smoke-a1c7` and
-`eval-20260929-full-fd65`). "First real numbers" has **not** happened: there is no calibration,
+**M0 status: not exited.** `:core` and the harness are done and green (**896 tests across five
+modules** — core 459, platform 137, app-desktop 206, eval 39, ui 55; re-measured **2026-10-03**
+in the source checkout with `--rerun-tasks`, 20 tasks all executed; it read 691 / core 302 /
+app-desktop 169 / ui 44 on 2026-09-30 and those were stale). The eval **suites** were not re-run
+on 2026-10-03, so their numbers still belong to their run ids: `smoke` 11 pass/1 skip = run
+`eval-20260930-smoke-93ec`, `full` 13 pass/6 skip = run `eval-20260929-full-fd65`. "First real numbers" has **not** happened: there is no calibration,
 no macro dataset, and no face embedder, so there is no real number to report beyond MRZ/QR/diary
 on generated fixtures. Sync round-trips within one device. **No clip has been built** and the
 BOM says ~₹445, not ₹300.
@@ -42,7 +45,7 @@ Theme: airplane-mode verdict on real phones.
 | M1.4 | Trust enroll (supervisor PIN)/verify/revoke/recheck-scheduler | Android | 3 | policy tests + UX walkthrough |
 | M1.5 | Sync export/import + HMAC provisioning + merge-verify on 2 phones | Core+Android | 3 | A→B→A round-trip; quarantine path tested |
 | M1.6 | Face threshold tune on pairs v1 + per-bucket report; macro re-tune on v1 | Vision | 3 | operating points in FUSION; histograms saved |
-| M1.7 | APK size ≤35 MB + airplane-install test + battery sample | Android | 2 | CI size gate green; numbers logged |
+| M1.7 | APK size ≤35 MB + airplane-install test + battery sample | Android | 2 | CI size gate green; numbers logged — ⚠️ **the size half is DONE 2026-10-03** (`:app-android:checkApkSize` green: 33.39 / 26.56 MB debug, 22.97 / 16.14 MB release, all within 35.0 MB, from 4 per-ABI APKs). **The airplane-install half is not started** — no device, no `adb`. **And there is no `.aab`**: `bundleRelease` fails on AGP 8.9.2 with ABI splits, so delivery is APK-only |
 | M1.8 | Milestone review | all | 1 | SPEC §6 M1 acceptance |
 
 ## M2 — Desktop console + cross-device intel (Week 3)
@@ -61,8 +64,11 @@ Theme: the post, not the phone.
 
 **Tripwire M2-d3 (packaging): desktop packaging stalls → fallback: desktop runs via
 `./gradlew :app-desktop:run` at finals (acceptable); installer effort capped.
-⚠️ Taken by default — `packageDistributionForCurrentOS` was never implemented, and BUILD.md §3
-records that.**
+✅ **No longer taken — corrected 2026-09-30.** `packageDistributionForCurrentOS` was indeed never a task,
+but `:app-desktop` applies the standard `application` plugin, so `installDist`/`distZip`/`distTar`
+build a working distribution and the packaged launcher runs. `BUILD_HANDOFF.md` §4.7 has the
+before/after, including the model the distribution was silently losing. The fallback (`run` from a
+checkout) is no longer in force. Still deferred: a genuinely clean-machine install.
 
 **Tripwire M2-d3 (inference): the desktop runtime is missing an OS. ⚠️ THIS TRIPWIRE HAS ALREADY
 FIRED, and it is not a tripwire any more, it is a fact.** `BUILD.md` §4 used to describe a
@@ -112,8 +118,8 @@ apply.** The project is built by one person.
 
 - **Solo (ACTUAL — this is the plan being executed):** the variant this file used to call "not
   recommended" is the one in force. What that costs, concretely and as measured on
-  2026-09-29: the Android field app is written (34 source files) but has **never been
-  compiled**; the desktop console runs; desktop packaging was never started; the face
+  2026-09-30: the Android field app is written (32 source files, 8 test files) but has **never been
+  compiled**; the desktop console runs, **from a checkout and from a packaged distribution**; the face
   embedder is blocked on licensing and no amount of solo effort fixes that; D-MACRO, D-FACE,
   D-PASTE and D-SPOOF all have **zero media rows**; there is no SPECIMEN artwork, no built
   clip, and no red-team day. Priority therefore goes to (a) compiling `:app-android` on a real
@@ -121,7 +127,7 @@ apply.** The project is built by one person.
   licence/permissions decision that gates the entire face layer.
 - **4 people / 4 weeks:** cut P1 entirely; desktop = run-from-source only (no packaging); one Android dev doubles desktop-review; red-team = half day. *(Not available.)*
 - **8 people:** +dedicated QA (eval+red-team), +hardware/polish (clip v3, exhibit, video). *(Not available.)*
-- **2-week crash:** M0(4d, spike-light) → M1(5d, Android only + file diary) → M2(2d, desktop run-only + sync file) → M3(3d, red-team-lite + freeze). Desktop packaging + NFC + Nepali cut to P2. Non-negotiable even in crash: harness, GREY policy, failure gallery, airplane demo. *(The harness and GREY policy exist; the failure gallery and the airplane demo do not, and the second needs a device that does not exist.)*
+- **2-week crash:** M0(4d, spike-light) → M1(5d, Android only + file diary) → M2(2d, desktop run-only + sync file) → M3(3d, red-team-lite + freeze). Desktop packaging + NFC + Nepali cut to P2. Non-negotiable even in crash: harness, GREY policy, failure gallery, airplane demo. *(The harness and GREY policy exist; desktop packaging now exists too. The failure gallery and the airplane demo do not — and as of 2026-10-03 the airplane demo no longer needs a *build*, only a **device**, because `:app-android` compiles and packages.)*
 
 ## Cut list (final unless M2 review reinstates a P1)
 Age/gender · ELA-CNN · template registries · LLM · central biometrics · realtime net · predictive scores · ORT migration · RapidOCR-desktop · registry live calls · iOS · stamp-bridge automation · desktop voice.

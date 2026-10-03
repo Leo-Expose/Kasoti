@@ -5,9 +5,12 @@ investigation. DESIGN.md §3 requires the two platforms to produce the same outp
 bytes (EVAL.md §4: tolerance ±1e-3 on similarity), and nothing in this repository has ever
 checked that, because there has been no model to check.
 
-**Parity is not verified and is not claimed.** There is no Android SDK and no device. What exists
-here is the *normative reference* — the pins and the expected outputs — so that the first person
-with a device runs a test rather than writing one.
+**Parity is not verified and is not claimed.** ⚠️ **Corrected 2026-10-03: this used to say "There
+is no Android SDK and no device."** An SDK **is** present now and `:app-android` compiles — but
+**there is still no device**, and nothing has run. So the claim is unchanged in substance and
+changed only in the reason: the blocker moved from "cannot compile" to "nothing to compile *on*".
+What exists here is the *normative reference* — the pins and the expected outputs — so that the
+first person with a device runs a test rather than writing one.
 
 ---
 

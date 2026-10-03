@@ -1,5 +1,6 @@
 package dev.kasoti.factory
 
+import dev.kasoti.threshold.ThresholdName
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -77,6 +78,8 @@ object Spectrum {
         // DC is discarded: it only encodes overall brightness.
         radial[0] = 0.0
 
+        val highFrequencyFrom = ThresholdName.HALFTONE_HIGH_FREQ_RADIUS.default.toInt()
+
         val peakRadius = (bandLowRad.toInt()..minOf(bandHighRad.toInt(), maxR))
             .maxByOrNull { radial[it] } ?: 0
         val peakEnergy = if (peakRadius > 0) radial[peakRadius] else 0.0
@@ -101,7 +104,10 @@ object Spectrum {
         var allFreq = 0.0
         for (r in 1..maxR) {
             allFreq += radial[r]
-            if (r >= 64) highFreq += radial[r]
+            // The one band choice in this file, and therefore the one registry entry it has
+            // (HALFTONE_HIGH_FREQ_RADIUS). Everything else here is the published Hann window,
+            // the published transform, or a numerical guard — see the registry's `S10`.
+            if (r >= highFrequencyFrom) highFreq += radial[r]
         }
         val highFrequencyEnergy = if (allFreq <= 0.0) 0.0 else (highFreq / allFreq).coerceIn(0.0, 1.0)
 

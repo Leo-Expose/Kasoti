@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
 import dev.kasoti.android.capture.CameraController
 import dev.kasoti.android.field.CapturePlanner
+import dev.kasoti.android.field.CaptureQuality
 import dev.kasoti.android.field.CaptureStep
 import dev.kasoti.android.field.DemoCatalogue
 import dev.kasoti.android.field.MacroStage
@@ -31,6 +32,10 @@ import dev.kasoti.android.platform.VizFieldReader
 import dev.kasoti.android.view.CameraSurface
 import dev.kasoti.android.view.VoiceReadout
 import dev.kasoti.android.view.KasotiScreen
+// `Quad.withCorner` is a top-level extension declared in `view/QuadHandleOverlay.kt`, not a
+// member of `Quad`. Without this import the overlay's own call site resolved and the activity's
+// did not, which is the only reason this ever failed to compile.
+import dev.kasoti.android.view.withCorner
 import dev.kasoti.fusion.FindingCode
 import dev.kasoti.fusion.QualityReport
 import dev.kasoti.fusion.Track
@@ -39,8 +44,10 @@ import dev.kasoti.i18n.Language
 import dev.kasoti.i18n.Messages
 import dev.kasoti.mrz.MrzResult
 import dev.kasoti.ui.AppState
+import dev.kasoti.ui.CaptureProgressBuilder
 import dev.kasoti.ui.FlowController
 import dev.kasoti.ui.PermissionState
+import dev.kasoti.ui.QualityMeter
 import dev.kasoti.ui.QuadMode
 import dev.kasoti.ui.ScreenState
 import dev.kasoti.ui.UiEvent
@@ -353,7 +360,7 @@ class MainActivity : ComponentActivity() {
     private suspend fun takeMacroPatch(bitmap: Bitmap) {
         val stage = withContext(Dispatchers.Default) {
             val gray = AndroidImaging().downscale(bitmap).let { AndroidImaging().toGray(it) }
-            val slot = if (capture.macro.photoZone == null) {
+            val slot = if (capture.macro?.photoZone == null) {
                 MacroStage.Slot.PHOTO_ZONE
             } else {
                 MacroStage.Slot.TEXT_ZONE
@@ -367,7 +374,21 @@ class MainActivity : ComponentActivity() {
                     torchOn = controller()?.torchOn ?: false,
                     uVResponseObserved = null,
                 ),
-                existing = capture.macro,
+                // `capture.macro` is null until the first macro patch lands, and that null is
+                // *load-bearing* — `buildReport` reads `capture.macro?.evidence()` and needs
+                // `null` to mean "the step did not run" (`MacroStage.Stage.evidence()` is itself
+                // nullable for the same reason). So the empty state is constructed HERE rather
+                // than by pre-seeding `capture.macro`, and it is the same literal the module's own
+                // tests use (`TrustDemoAndLayersTest`): both patches absent, no clip, UV never
+                // observed. `take()` overwrites `uv` and `clipUsed` on the copy it returns, so the
+                // values below are never read back.
+                existing = capture.macro
+                    ?: MacroStage.Stage(
+                        photoZone = null,
+                        textZone = null,
+                        clipUsed = false,
+                        uv = CaptureQuality.UvReading.NOT_OBSERVED,
+                    ),
             )
         }
         capture.macro = stage
@@ -378,7 +399,18 @@ class MainActivity : ComponentActivity() {
                     textZoneSharpness = stage.textZone?.sharpness?.fraction ?: 0f,
                     clipUsed = stage.clipUsed,
                     focusLocked = controller()?.isFocusLocked() ?: false,
-                    ready = stage.canAdvance,
+                    // `ready = stage.canAdvance` is NOT passed here, and must never be.
+                    // `MacroCard.ready` is a *derived* `val` (`ui/ScreenState.kt:174`), and its
+                    // own KDoc records that making it a stored field was a deliberate bug fix:
+                    // "the reducer wrote a derived value back into the object it was derived
+                    // from — a cycle that deadlocked the second patch". Passing it cannot be
+                    // reinstated without re-creating that shape.
+                    //
+                    // The two do not need to be reconciled by threading a value through: the
+                    // sharpness half is the same predicate on both sides
+                    // (`fraction >= 1f` ⟺ `Sharpness.passed`, same `Q_BLUR` bar), and
+                    // `MacroStage.Stage.canAdvance` remains the authoritative field-layer check —
+                    // see its KDoc. Nothing here is a workaround and nothing here is pending.
                 ),
             ),
             transientError = null,
@@ -613,6 +645,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * The manual quad the operator has dragged, for the overlay to draw and the pipeline to crop.
+     *
+     * A *read* of a value the pipeline owns; the only way to change it is a `UiEvent.AcceptQuad`.
+     *
+     * This was a **top-level** `val` in the file and could not compile: `capture` is
+     * `private val capture = CaptureWorkingState()` — a member of [MainActivity] — so a top-level
+     * declaration has no `capture` in scope at all ("Unresolved reference 'capture'"). Both were
+     * moved into the class as `private` instance properties, which is also the tighter visibility
+     * the KDoc's own argument asks for: `setContent { CameraSurface(quad = currentQuad, …) }` is
+     * the only reader, and it is *inside* this class, so nothing outside needs access. The KDoc's
+     * claim that these are public "because the overlay composable is in a different file" was not
+     * true — `CameraSurface` receives the quad as a parameter and never names either property.
+     */
+    private val currentQuad: Quad? get() = capture.quad
+
+    /** The `PreviewView` the composable tree created, once it exists. */
+    private val previewSurface: androidx.camera.view.PreviewView? get() = capture.previewView
+
     private companion object {
         /** Log tag for the model binding, so a field report can name which weights a build had. */
         const val TAG = "kasoti.model"
@@ -666,20 +717,11 @@ fun toUiProgress(
     language: Language = Language.ENGLISH,
 ) = CaptureProgressBuilder.build(
     steps = plan.mapNotNull(::toUiStep),
-    done = done.associate { step -> toUiStep(step) to true },
+    // `toUiStep` is nullable *by design* (a step the field layer knows and `:ui` does not must be
+    // dropped, not guessed), so `associate` would type this `Map<CaptureStepId?, Boolean>` and fail
+    // the parameter. Same `mapNotNull { …?.let { … } }.toMap()` shape the `meters` line below uses.
+    done = done.mapNotNull { step -> toUiStep(step)?.let { it to true } }.toMap(),
     meters = meters.mapNotNull { (step, meter) -> toUiStep(step)?.let { it to meter } }.toMap(),
     currentIndex = currentIndex,
     language = language,
 )
-
-/**
- * The manual quad the operator has dragged, for the overlay to draw and the pipeline to crop.
- *
- * Public because the overlay composable is in a different file; it is a *read* of a value the
- * pipeline owns, and the only way to change it is a `UiEvent.AcceptQuad`. Keeping the setter
- * private is what stops a composable from quietly rewriting a crop the operator never accepted.
- */
-val currentQuad: Quad? get() = capture.quad
-
-/** The `PreviewView` the composable tree created, once it exists. */
-val previewSurface: androidx.camera.view.PreviewView? get() = capture.previewView

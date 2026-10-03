@@ -80,8 +80,13 @@ class MlKitOcrEngine private constructor(
      *   this (see `dev.kasoti.android.field.MrzExtractor`) rather than the engine being asked
      *   for MRZ specifically — an engine asked to find an MRZ will find one whether or not there
      *   is one, which is the surest way to manufacture an `R-MATH-01`.
+     *
+     * `suspend` because [awaitCompat] is: ML Kit's `Task` has to be awaited, and
+     * `suspendCancellableCoroutine` has no other legal home. The one caller
+     * (`MainActivity.readMrz`) invokes this inside `withContext(Dispatchers.Default)`, so the OCR
+     * still runs off the main thread and the ANR budget in NFR-R1 is unchanged.
      */
-    fun recognize(bitmap: Bitmap): Recognition = try {
+    suspend fun recognize(bitmap: Bitmap): Recognition = try {
         val image = InputImage.fromBitmap(bitmap, ROTATION)
         val result = recognizer.process(image).awaitCompat()
         val lines = result.textBlocks.flatMap { block ->
@@ -152,7 +157,7 @@ class MlKitQrScanner private constructor(private val scanner: BarcodeScanner) {
 
     val id: String = ENGINE_ID
 
-    fun scan(bitmap: Bitmap): List<ByteArray> = try {
+    suspend fun scan(bitmap: Bitmap): List<ByteArray> = try {
         scanner.process(InputImage.fromBitmap(bitmap, ROTATION))
             .awaitCompat()
             .mapNotNull { barcode ->
@@ -299,7 +304,7 @@ class VizFieldReader {
  * `await()` from `kotlinx-coroutines-play-services` is not used: it would add a second
  * Play Services artifact for one extension function. `addOnCompleteListener` needs nothing.
  */
-private fun <T> com.google.android.gms.tasks.Task<T>.awaitCompat(): T = kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+private suspend fun <T> com.google.android.gms.tasks.Task<T>.awaitCompat(): T = kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
     addOnCompleteListener { task ->
         val error = task.exception
         if (error != null) continuation.resumeWith(Result.failure(error))

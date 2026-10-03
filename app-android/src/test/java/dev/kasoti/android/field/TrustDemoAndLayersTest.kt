@@ -587,6 +587,58 @@ class MacroStageTest {
     }
 
     /**
+     * The cross-module invariant that lets `:ui` derive the shutter's affordance without importing
+     * this package: `MacroCard.awaiting` is `DONE` exactly when both `Sharpness.fraction` values
+     * are `>= 1f`, and that is exactly when both `Sharpness.passed` are true — which is the
+     * sharpness half of [MacroStage.Stage.canAdvance].
+     *
+     * `MacroStageTest` is the only place both sides are reachable at once: `:ui` cannot see
+     * `CaptureQuality`, and `:app-android` cannot see the UI derivation. Asserted over a sweep
+     * across the bar because the boundary is the whole claim — a `>` instead of a `>=` on either
+     * side would pass every non-boundary case and fail only here.
+     */
+    @Test
+    fun `MacroCard awaiting is DONE exactly when canAdvance's sharpness half is satisfied`() {
+        val bar = FieldFixtures.REGISTRY[ThresholdName.Q_BLUR].toFloat()
+        assertTrue(bar > 0f, "Q_BLUR must be positive, else the fraction is NaN and the two halves can diverge")
+
+        val variants = listOf(0f, bar * 0.25f, bar * 0.999f, bar, bar * 1.001f, bar * 2f)
+        for (photoVariance in variants) {
+            for (textVariance in variants) {
+                val photo = quality.evaluateMacroSharpness(photoVariance)
+                val text = quality.evaluateMacroSharpness(textVariance)
+                val bothPassed = photo.passed && text.passed
+
+                val card = dev.kasoti.ui.MacroCard(
+                    photoZoneSharpness = photo.fraction,
+                    textZoneSharpness = text.fraction,
+                    clipUsed = true,
+                    focusLocked = true,
+                )
+                val stage = MacroStage.Stage(
+                    photoZone = patchOf(MacroStage.Slot.PHOTO_ZONE, photo),
+                    textZone = patchOf(MacroStage.Slot.TEXT_ZONE, text),
+                    clipUsed = true,
+                    uv = CaptureQuality.UvReading.UNSUPPORTED,
+                )
+
+                assertEquals(bothPassed, card.ready, "photo=$photoVariance text=$textVariance: the shutter must not be offered below the bar")
+                assertEquals(bothPassed, stage.canAdvance, "photo=$photoVariance text=$textVariance: both sides must agree about sharpness")
+                assertEquals(stage.canAdvance, card.ready, "photo=$photoVariance text=$textVariance: `:ui` and the field layer must not disagree")
+            }
+        }
+    }
+
+    /** A [MacroStage.Patch] carrying an already-measured sharpness, so the sweep above is exact. */
+    private fun patchOf(slot: MacroStage.Slot, sharpness: CaptureQuality.Sharpness) = MacroStage.Patch(
+        slot = slot,
+        label = ProcessLabel.UNKNOWN,
+        margin = 0f,
+        sharpness = sharpness,
+        image = null,
+    )
+
+    /**
      * A patch whose focus measure lands where the test wants it.
      *
      * Built at [MacroStage.PATCH_SIZE] rather than at a small size that would then be

@@ -1,0 +1,17 @@
+case: case_01M3RP2T54W2YT21EV8TANVK3W
+verdict: GREY
+track: PASSPORT
+threshold: v1
+fusion: fusion-v1
+demo: true
+findings:
+  G_NOCLIP capture/macro#macro/ABSENT the macro clip is required for this track and is missing
+layers:
+  image RAN 640x400 gray, mean 0.825
+  quality RAN brightness 210.278 within [40.000, 225.000]
+  quality.appearance UNAVAILABLE blur/glare/pose need the capture pipeline; a file import cannot attest them
+  math RAN TD3; all check digits pass
+  qr SKIPPED no QR supplied
+  macro SKIPPED no photoZone/textZone in the sidecar
+  face UNAVAILABLE no embedding interpreter bound (M2)
+  diary UNAVAILABLE dev.kasoti.diary not yet in :core (M2)
